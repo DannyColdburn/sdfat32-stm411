@@ -7,6 +7,11 @@
 #define uint32_cast(x) (*(uint32_t *)(x))
 #define uint16_cast(x) (*(uint16_t *)(x))
 #define SD_BUFFER_MAX 512+256
+#define MAX_LFN_COUNT 5     // Maximum count of LFNs
+#define ENTRY_IS_FILE 1
+#define ENTRY_IS_ARCH 3
+#define ENTRY_ZERO 0
+#define ENTRY_NOT_FILE 2
 
 typedef struct{
     uint8_t found;
@@ -30,6 +35,49 @@ static uint32_t readPtrToAddr(SDCardInfo_t *card, SDCardFile_t);
 static uint32_t createFile(SDCardInfo_t *card, SDCardFile_t *file, const char *name);
 static uint8_t  readRootPage(SDCardInfo_t *SDCard, uint8_t *buffer, uint32_t pageOffset);
 static uint8_t  readEntry(SDCardInfo_t *card, uint8_t *entry, uint32_t number);
+
+static uint8_t  isFile(uint8_t *entry){
+    if (entry[0x0] == 0) {
+        return ENTRY_ZERO;
+    }
+    if (entry[0x0] == 0xE5) {
+        return ENTRY_IS_ARCH;
+    }
+    if (entry[0x0B] != 0x20) {
+        return ENTRY_NOT_FILE;
+    }
+
+    return ENTRY_IS_FILE;
+}
+
+static inline uint8_t getEntryLFNCount(SDCardInfo_t *card, uint32_t entryPos){
+    uint8_t entry[32];
+    uint8_t lfnCount = 0;
+
+    // First check if entry has LFN
+    readEntry(card, entry, entryPos--);     // Read and decrement for later
+	// DBGF("Searh for LFN at %u", enryPos);
+    // DBGC((char *) entry, 32);
+	if (!(entry[0x06] == '~' && entry[0x07] == '1')) {
+        return 0; 
+    }
+    
+    while (1){
+        readEntry(card, entry, entryPos--);  
+        if ( ((entry[0x0] & 0x40) == 0x40) && (entry[0x0B] == 0x0F)) {
+            lfnCount = entry[0x0] & 0x0F;
+            break;
+        }
+        
+
+        if(!entryPos) {
+            return 0;   // At this point we are in the beggining of root folder
+        }
+    }
+
+    return lfnCount;
+}
+
 
 
 uint8_t DL_SDCARD_Mount(SDCardInfo_t *SDCardInfo){
@@ -162,6 +210,65 @@ uint8_t DL_SDCard_FileRead(SDCardInfo_t *SDCard, SDCardFile_t *file, uint8_t *bu
 
 
 static uint8_t findFile (const char *fileName, SDCardFile_t *file, SDCardInfo_t *card){
+    DBGF("Searching for %s", fileName);
+    uint8_t entry[32];
+    uint32_t pos = 0;
+    uint32_t lfnCount = 0;
+    uint8_t *name = 0;
+    while(readEntry(card, entry, ++pos)){ 
+	// DBGF("Pos is: %u", pos);
+	// DBGH((char *)entry, 32);
+        uint8_t res = isFile(entry);
+        if (res == ENTRY_ZERO)      return 0;
+        if (res == ENTRY_IS_ARCH)   continue;
+        if (res == ENTRY_NOT_FILE)   continue;
+      	// DBGF("Found file at pos: %u", pos);
+	// DBGC((char *)entry, 32);
+        lfnCount = getEntryLFNCount(card, pos);
+		// DBGF("LFN count = %u", lfnCount);
+        if (lfnCount) {
+            name = (uint8_t *) calloc(14, lfnCount);
+            if (!name) {
+                DBG("Mem alloc failed at findFile()");
+                return 0;
+            }
+            
+            for (int i = 1; i < lfnCount + 1; i++){ // TODO pack it to inline func
+                uint8_t lfnEntry[32];
+                readEntry(card, lfnEntry, pos - i);
+                uint8_t ucs2name[26] = {0};
+                uint8_t normalName[14] = {0};
+                memcpy(ucs2name, &lfnEntry[0x01], 10);
+                memcpy(ucs2name + 10, &lfnEntry[0x0E], 12);
+                memcpy(ucs2name + 22, &lfnEntry[0x1C], 4);
+                ucs2nameConvertion((char *) ucs2name, (char *)normalName);
+                strcat((char *) name, (char *)normalName);
+            }
+            
+        } else {
+            name = (uint8_t *) calloc(14, sizeof(uint8_t));
+            if (!name) {
+                DBG("Mem alloc failed at findFile()");
+                return 0;
+	    }
+            unpackSFN((char *)name, (char *)entry);
+            
+        }
+
+        DBGF("Cheking: %s", name);
+        if (strcmp((char *)name, fileName) == 0) {
+            DBG("Found File\n");
+	    file->EntryPos = pos;
+            free(name);
+            return 1;
+        }
+        
+        free(name);
+
+    }
+
+    return 0;
+
     uint32_t currentWorkingCluster = card->rootStartClusterNumber;
     uint8_t table[512];         //? Maybe placing in in stack is a bad idea?    
     uint8_t *root = &sd_buffer[256];    // Pointer to actual data, because first 256 bytes used for storing previous page
@@ -315,11 +422,15 @@ static uint8_t  readEntry(SDCardInfo_t *card, uint8_t *entry, uint32_t number){
     uint32_t page = number * 32 / 512 - (card->sectorsPerCluster * cluster);
     uint32_t pos = number * 32 - (card->clusterSize * cluster + page * 512);
     uint32_t clusterOffset = getClusterChained(card, card->rootStartClusterNumber, cluster);
+    if (clusterOffset == 0){
+        return 0; // No clusters next
+    }
 
-    uint32_t addr = card->PartitionLBA + card->rootLBA + ((clusterOffset) * 64 + page);
+    uint32_t addr = card->PartitionLBA + card->rootLBA + ((clusterOffset - 2) * 64 + page);
+    // DBGF("Reading addr: %u", addr);
     uint8_t buff[512];
     DL_SDCARD_Read(addr, buff);
-    memcpy(&buff[pos], entry, 32);
+    memcpy(entry, &buff[pos], 32);
     return 1;
 }
 
@@ -369,11 +480,11 @@ static uint8_t  getFileAttrib(SDCardInfo_t *card, SDCardFile_t *file){
     uint8_t *entry = &sd_buffer[file->EntryPos * 32 + 256];
     file->fileSize = uint32_cast(&entry[0x1C]);
     file->bytesLeftToRead = file->fileSize;
-    DBGF("File size: %u bytes\n", file->fileSize);
+    // DBGF("File size: %u bytes\n", file->fileSize);
     uint32_t clusterNumber = 0;
     clusterNumber |= (uint16_cast(&entry[0x14]) << 16) | uint16_cast(&entry[0x1A]);
     file->dataClusterStart = clusterNumber;
-    DBGF("File data cluster: %u\n", file->dataClusterStart);
+    // DBGF("File data cluster: %u\n", file->dataClusterStart);
     return 1; 
 }
 
@@ -468,3 +579,4 @@ getPartitionInfo(SDCardInfo_t *cardInfo){
 //     ret |= buffer[pos + 1];
 //     return ret;
 // }
+// 

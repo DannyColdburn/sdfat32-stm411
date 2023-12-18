@@ -1,13 +1,13 @@
 set(CMAKE_SYSTEM_NAME Generic)
 set(CMAKE_SYSTEM_PROCESSOR arm)
 
-set(CMAKE_C_COMPILER arm-none-eabi-gcc.exe)
-set(CMAKE_CXX_COMPILER arm-none-eabi-g++.exe)
-set(CMAKE_ASM_COMPILER arm-none-eabi-as.exe)
-set(CMAKE_OBJDUMP arm-none-eabi-objdump.exe)
-set(CMAKE_READELF arm-none-eabi-readelf.exe)
-set(CMAKE_OBJCOPY arm-none-eabi-objcopy.exe)
-set(CMAKE_SIZE_UTIL arm-none-eabi-size.exe)
+set(CMAKE_C_COMPILER arm-none-eabi-gcc)
+#set(CMAKE_CXX_COMPILER arm-none-eabi-g++)
+set(CMAKE_ASM_COMPILER arm-none-eabi-as)
+set(CMAKE_OBJDUMP arm-none-eabi-objdump)
+set(CMAKE_READELF arm-none-eabi-readelf)
+set(CMAKE_OBJCOPY arm-none-eabi-objcopy)
+set(CMAKE_SIZE_UTIL arm-none-eabi-size)
 
 set(CMAKE_C_COMPILER_WORKS 1)
 set(CMAKE_CXX_COMPILER_WORKS 1)
@@ -18,7 +18,7 @@ cmake_minimum_required(VERSION 3.27)
 #set(CMAKE_C_FLAGS "-mcpu=cortex-m4 -mthumb -mfloat-abi=soft")
 #set(CMAKE_CXX_FLAGS "-mcpu=cortex-m4 -mthumb -mfloat-abi=soft")
 
-project(F411-FAT32 C CXX ASM)
+project(F411-FAT32 C ASM)
 
 #file(GLOB source_files CONFIGURE_DEPENDS *.c)
 file(GLOB_RECURSE SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/*.c)
@@ -36,8 +36,8 @@ target_compile_options(
 
 target_include_directories(
     ${PROJECT_NAME} PRIVATE 
-    "C:\\Tools\\Libs\\CMSIS_5\\CMSIS\\Core\\Include" 
-    "C:\\Tools\\Libs\\cmsis_device_f4\\Include"
+    "/home/danny/stm32libs/STM32CubeF4/Drivers/CMSIS/Include" 
+    "/home/danny/stm32libs/cmsis_device_f4/Include"
     ${CMAKE_SOURCE_DIR}/inc/
 )
 
