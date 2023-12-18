@@ -41,6 +41,9 @@
             ((USART_TypeDef*) DEBUG_UART)->DR = d_buffer[i];
             while(!(((USART_TypeDef*) DEBUG_UART)->SR & USART_SR_TXE));
         }
+	((USART_TypeDef*) DEBUG_UART)->DR = '\r';
+	while(!(((USART_TypeDef*) DEBUG_UART)->SR & USART_SR_TXE));
+	((USART_TypeDef*) DEBUG_UART)->DR = '\n';
         while(!(((USART_TypeDef*) DEBUG_UART)->SR & USART_SR_TXE));
     }
 
@@ -55,11 +58,15 @@
             ((USART_TypeDef*) DEBUG_UART)->DR = ' ';
             while(!(((USART_TypeDef*) DEBUG_UART)->SR & USART_SR_TXE));
             if ((i + 1) % 32 == 0) {
+		((USART_TypeDef*) DEBUG_UART)->DR = '\r';
+		while(!(((USART_TypeDef*) DEBUG_UART)->SR & USART_SR_TXE));
                 ((USART_TypeDef*) DEBUG_UART)->DR = '\n';
                 while(!(((USART_TypeDef*) DEBUG_UART)->SR & USART_SR_TXE));
             }
         }
-        ((USART_TypeDef*) DEBUG_UART)->DR = '\n';
+        ((USART_TypeDef*) DEBUG_UART)->DR = '\r';
+	while(!(((USART_TypeDef*) DEBUG_UART)->SR & USART_SR_TXE));
+	((USART_TypeDef*) DEBUG_UART)->DR = '\n';
         while(!(((USART_TypeDef*) DEBUG_UART)->SR & USART_SR_TXE));
     }
 
@@ -74,11 +81,15 @@
             ((USART_TypeDef*) DEBUG_UART)->DR = ' ';
             while(!(((USART_TypeDef*) DEBUG_UART)->SR & USART_SR_TXE));
             if ((i + 1) % 32 == 0) {
+		((USART_TypeDef*) DEBUG_UART)->DR = '\r';
+		while(!(((USART_TypeDef*) DEBUG_UART)->SR & USART_SR_TXE));
                 ((USART_TypeDef*) DEBUG_UART)->DR = '\n';
                 while(!(((USART_TypeDef*) DEBUG_UART)->SR & USART_SR_TXE));
             }
         }
-        ((USART_TypeDef*) DEBUG_UART)->DR = '\n';
+        ((USART_TypeDef*) DEBUG_UART)->DR = '\r';
+        while(!(((USART_TypeDef*) DEBUG_UART)->SR & USART_SR_TXE));
+    	((USART_TypeDef*) DEBUG_UART)->DR = '\n';
         while(!(((USART_TypeDef*) DEBUG_UART)->SR & USART_SR_TXE));
     }
 
