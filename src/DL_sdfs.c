@@ -35,49 +35,8 @@ static uint32_t readPtrToAddr(SDCardInfo_t *card, SDCardFile_t);
 static uint32_t createFile(SDCardInfo_t *card, SDCardFile_t *file, const char *name);
 static uint8_t  readRootPage(SDCardInfo_t *SDCard, uint8_t *buffer, uint32_t pageOffset);
 static uint8_t  readEntry(SDCardInfo_t *card, uint8_t *entry, uint32_t number);
-
-static uint8_t  isFile(uint8_t *entry){
-    if (entry[0x0] == 0) {
-        return ENTRY_ZERO;
-    }
-    if (entry[0x0] == 0xE5) {
-        return ENTRY_IS_ARCH;
-    }
-    if (entry[0x0B] != 0x20) {
-        return ENTRY_NOT_FILE;
-    }
-
-    return ENTRY_IS_FILE;
-}
-
-static inline uint8_t getEntryLFNCount(SDCardInfo_t *card, uint32_t entryPos){
-    uint8_t entry[32];
-    uint8_t lfnCount = 0;
-
-    // First check if entry has LFN
-    readEntry(card, entry, entryPos--);     // Read and decrement for later
-	// DBGF("Searh for LFN at %u", enryPos);
-    // DBGC((char *) entry, 32);
-	if (!(entry[0x06] == '~' && entry[0x07] == '1')) {
-        return 0; 
-    }
-    
-    while (1){
-        readEntry(card, entry, entryPos--);  
-        if ( ((entry[0x0] & 0x40) == 0x40) && (entry[0x0B] == 0x0F)) {
-            lfnCount = entry[0x0] & 0x0F;
-            break;
-        }
-        
-
-        if(!entryPos) {
-            return 0;   // At this point we are in the beggining of root folder
-        }
-    }
-
-    return lfnCount;
-}
-
+static inline uint8_t  isFile(uint8_t *entry);
+static inline uint8_t getEntryLFNCount(SDCardInfo_t *card, uint32_t entryPos);
 
 
 uint8_t DL_SDCARD_Mount(SDCardInfo_t *SDCardInfo){
@@ -251,8 +210,7 @@ static uint8_t findFile (const char *fileName, SDCardFile_t *file, SDCardInfo_t 
                 DBG("Mem alloc failed at findFile()");
                 return 0;
 	    }
-            unpackSFN((char *)name, (char *)entry);
-            
+            unpackSFN((char *)name, (char *)entry);            
         }
 
         DBGF("Cheking: %s", name);
@@ -261,103 +219,10 @@ static uint8_t findFile (const char *fileName, SDCardFile_t *file, SDCardInfo_t 
 	    file->EntryPos = pos;
             free(name);
             return 1;
-        }
-        
+        }        
         free(name);
-
     }
-
     return 0;
-
-    uint32_t currentWorkingCluster = card->rootStartClusterNumber;
-    uint8_t table[512];         //? Maybe placing in in stack is a bad idea?    
-    uint8_t *root = &sd_buffer[256];    // Pointer to actual data, because first 256 bytes used for storing previous page
-    DL_SDCARD_Read(card->PartitionLBA + card->rootLBA, root);
-
-    DBGC((char *) sd_buffer, SD_BUFFER_MAX);
-
-    // Now reading page to find file entry
-    // Each entry is 32byte long
-    while(1){
-        for (int i = 0; i < 16; i++) {
-            char *entry = (char *) &root[i * 32];        
-            // Checking first byte to see if valid
-            if (entry[0x00] == 0) {    // There is no more entry, it's over man
-                return 0;             
-            }
-
-            if (entry[0x00] == 0xE5) {   // That's an archieve file - deleted entry, no use for this
-                continue;       // Start next cycle
-            }
-
-            if (entry[0x0B] != 0x20) {  // We only searching for files, they marked with 0x20 byte //? Or it's only a bit, and here we need to use binwise and?
-                continue;
-            }
-
-            // If we passed previous checks, we may encounter some actual files
-            char name[128] = {0};        //For naming purposes
-
-            // Name resolution right here
-            if (entry[0x06] == '~' && entry[0x07] == '1'){
-                uint8_t lfnCount = 0;       // Count if LFN structs
-                for (int i = 1; i < 5; i++){
-                    char *lfnEntry = &entry[0 - i * 32];   // Checking backwards
-                    if (((lfnEntry[0x00] & 0x40) == 0x40) && (lfnEntry[0x0B] == 0x0F)) {    // If we found LFN entry Sequence
-                        lfnCount = lfnEntry[0x00] & 0x0F;   // Get rid of 0x40
-                        break;
-                    }
-                    // Actually LFN number could me bigger, but here we only finding maximum of 4 lfn's
-                }
-                // If there is LFN's
-                if (lfnCount) {
-                    for (int i = 1; i < lfnCount + 1; i ++){
-                        char ucs2name[26] = {0};
-                        char normalName[14] = {0};
-                        char *lfnEntry = &entry[0 - i * 32];
-                        //Getting name chunks
-                        memcpy(ucs2name, &lfnEntry[0x01], 10);
-                        memcpy(ucs2name + 10, &lfnEntry[0x0E], 12);
-                        memcpy(ucs2name + 22, &lfnEntry[0x1C], 4);
-                        ucs2nameConvertion(ucs2name, normalName);
-                        strcat(name, normalName);
-                    }
-                }
-            } else {
-                unpackSFN(name, entry);            
-            }
-            DBGF("Checking: %s\n", name);
-
-            if (strcmp(name, fileName) == 0){
-                file->rootClusterPos = currentWorkingCluster;
-                file->EntryPos = i;
-                DBGF("File found: %s\n", name);
-                return 1;
-            }
-        }
-
-        // Checking if there another cluster with that root
-        uint32_t clusterPageToRead = currentWorkingCluster / 128;               //Let's check which page we need to read
-        uint32_t clusterOffsetAtPage = currentWorkingCluster - (128 * clusterPageToRead);               // Cluster position on a page
-        DL_SDCARD_Read(card->PartitionLBA + card->reservedSectorCount + clusterPageToRead, table);      // Reading that page to get next cluster
-        DBG("Cluster table:\n");
-        DBGH( (char *) table, 512);
-
-        uint32_t clusterNumber = uint32_cast(&table[clusterOffsetAtPage * 4]);
-        if (clusterNumber == 0x0FFFFFFF) {
-            DBG("Last cluster found\n");
-            return 0;
-        } 
-
-        DBGF("Current cluster offset %u\n", clusterOffsetAtPage);
-        DBGF("Next cluster is: %u\n", clusterNumber);
-        memcpy(sd_buffer, &root[256], 256);
-
-        if (!DL_SDCARD_Read(card->rootLBA - card->rootStartClusterNumber + clusterNumber, root)) return 0;
-        DBGH((char *) sd_buffer, SD_BUFFER_MAX);
-    }
-
-    return 1;
-
 }
 
 static uint32_t readPtrToAddr(SDCardInfo_t *card, SDCardFile_t file){
@@ -415,6 +280,20 @@ static uint32_t createFile(SDCardInfo_t *card, SDCardFile_t *file, const char *n
     
 
     return 1;
+}
+
+static uint8_t  isFile(uint8_t *entry){
+    if (entry[0x0] == 0) {
+        return ENTRY_ZERO;
+    }
+    if (entry[0x0] == 0xE5) {
+        return ENTRY_IS_ARCH;
+    }
+    if (entry[0x0B] != 0x20) {
+        return ENTRY_NOT_FILE;
+    }
+
+    return ENTRY_IS_FILE;
 }
 
 static uint8_t  readEntry(SDCardInfo_t *card, uint8_t *entry, uint32_t number){
@@ -516,6 +395,34 @@ static uint8_t  name2ucsConvention(const char *name, uint16_t *ucsName){
     return 1;
 }
 
+static inline uint8_t getEntryLFNCount(SDCardInfo_t *card, uint32_t entryPos){
+    uint8_t entry[32];
+    uint8_t lfnCount = 0;
+
+    // First check if entry has LFN
+    readEntry(card, entry, entryPos--);     // Read and decrement for later
+	// DBGF("Searh for LFN at %u", enryPos);
+    // DBGC((char *) entry, 32);
+	if (!(entry[0x06] == '~' && entry[0x07] == '1')) {
+        return 0; 
+    }
+    
+    while (1){
+        readEntry(card, entry, entryPos--);  
+        if ( ((entry[0x0] & 0x40) == 0x40) && (entry[0x0B] == 0x0F)) {
+            lfnCount = entry[0x0] & 0x0F;
+            break;
+        }
+        
+
+        if(!entryPos) {
+            return 0;   // At this point we are in the beggining of root folder
+        }
+    }
+
+    return lfnCount;
+}
+
 static uint8_t  removeTrailingBytes(char *data, uint8_t len, uint8_t byte){
     char *buff = 0;
     buff = (char *) malloc(len);
@@ -562,6 +469,8 @@ getPartitionInfo(SDCardInfo_t *cardInfo){
 
     return 1;
 }
+
+
 
 // static uint32_t getInt(uint32_t pos){
 //     uint32_t ret;
