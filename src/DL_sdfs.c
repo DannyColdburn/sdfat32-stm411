@@ -259,12 +259,16 @@ static inline uint8_t  writeEntry(SDCardInfo_t *card, uint32_t pos, uint8_t *dat
     if (!readPageCached(card, addr, buffer)) {
         return 0;
     }
-    DBGH(buffer, 512);
+    DBGH((char *)buffer, 512);
 
     memcpy(&buffer[offset.pos_offset], data, 32);
     DBG("\r\nAfter Modification:");
-    DBGH(buffer, 512);
+    DBGH((char *)buffer, 512);
     DL_SDCARD_WritePage(addr, buffer);
+
+    DL_SDCARD_Read(addr, buffer);
+    DBG("After write on card");
+    DBGH((char*) buffer, 512);
     return 1;
 }
 
@@ -427,6 +431,10 @@ static uint32_t createFile(SDCardInfo_t *card, SDCardFile_t *file, const char *n
         0, 0, 0, 0      // Size in bytes
     };
 
+    DBG("Will write entry:");
+    DBGH(entry, 32);
+    DBGC(entry, 32);
+
 
 
     entryNum = getAvailableEntryPos(card, 1); // +1 for SFN entry    
@@ -443,7 +451,7 @@ static uint32_t createFile(SDCardInfo_t *card, SDCardFile_t *file, const char *n
     return 1;
 }
 
-static uint8_t  isFile(uint8_t *entry){
+static uint8_t isFile(uint8_t *entry){
     if (entry[0x0] == 0) {
         return ENTRY_ZERO;
     }

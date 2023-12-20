@@ -113,7 +113,8 @@ uint8_t DL_SDCARD_Init(SPI_TypeDef *spi_instance, GPIO_TypeDef *CS_Port, uint8_t
 
 uint8_t DL_SDCARD_WritePage(uint32_t addr, uint8_t *data){
     // How it should be
-    // Sending CMD24 -> Getting R1 resp -> Send one byte -> Send Data Packet -> Getting Data Resp. -> SDCard goes busy -> Wait for Busy end
+    // Sending CMD24 -> Getting R1 resp -> Send one byte -> Sending data tocken -> Send Data Packet -> Getting Data Resp. -> 
+    // -> SDCard goes busy -> Wait for Busy end
     uint8_t r1;
     uint8_t dataResp;
 
@@ -130,6 +131,8 @@ uint8_t DL_SDCARD_WritePage(uint32_t addr, uint8_t *data){
         DBG("Failed to get 0xFF before sending data packet");
         return 0;
     }
+    spi_send_byte(0xFE); // Command tocken 'Data start'
+
     for (int i = 0; i < 512; i++) {
         spi_send_byte(data[i]);
     }
