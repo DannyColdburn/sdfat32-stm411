@@ -50,17 +50,10 @@ static inline uint8_t  writeEntry(SDCardInfo_t *card, uint32_t pos, uint8_t *dat
 static uint8_t         writeCluster(SDCardInfo_t *card, uint32_t pos, uint32_t value);
 static uint32_t        getLastClusterPos(SDCardInfo_t *card, uint32_t cluster);
 static inline offset_t  calculateOffsets(SDCardInfo_t *card, uint32_t position, uint32_t sizeInBytes);
-static uint8_t readPageCached(SDCardInfo_t *card, uint32_t Addr, uint8_t *buffer);
+static uint8_t readPageCached(SDCardInfo_t *card, uint32_t Addr, uint8_t *buffer); // Use it if you need to read one page multiple time
 
 
 uint8_t DL_SDCARD_Mount(SDCardInfo_t *SDCardInfo){
-    // uint8_t *buffer = 0;
-    // buffer = (uint8_t *) malloc(512);
-    // if (buffer == 0){
-    //     DBG("SDCard malloc() failed to allocate memory\n");
-    //     return 0;
-    // }
-    // DBG("SDCard memory allocated\n");
 
     if (DL_SDCARD_Read(0, sd_buffer) == 0){
         DBG("SDCard Failed to read Master Boot\n");
@@ -79,8 +72,20 @@ uint8_t DL_SDCARD_Mount(SDCardInfo_t *SDCardInfo){
     SDCardInfo->PartitionLBA = uint32_cast(&sd_buffer[MBR_1PART_ENTRY + 0x8]);
     DBGF("SDCard Partition block Address: %x\n", SDCardInfo->PartitionLBA);
 
+    uint8_t tryCount = 4; 
+    uint8_t res = 0;
+    while (tryCount--) {        // Sometimes we get an error while getting data read responce, try few times
+        res = DL_SDCARD_Read(SDCardInfo->PartitionLBA, sd_buffer);
+        if (!res) continue;
+        else break;
+    }
 
-    DL_SDCARD_Read(SDCardInfo->PartitionLBA, sd_buffer); 
+    if (!res) {
+        DBG("Partition failed to read after few attempts");
+        DBG("Mount Failed");
+        return 0;
+    }
+
     if (uint16_cast(&sd_buffer[0x1FE]) != 0xAA55){
         DBGF("SDCard Partition Signature mismatch: %x!!!\n", uint16_cast(&sd_buffer[0x1FE]));
         return 0;
@@ -90,31 +95,35 @@ uint8_t DL_SDCARD_Mount(SDCardInfo_t *SDCardInfo){
     memset(sd_buffer, 0, SD_BUFFER_MAX);    // Cleaning buffa
     // free(buffer);
     // buffer = 0;
-    DBG("SDCard Mounted\n");
+    DBG("SDCard Mounted");
     return 1;
 }
 
 SDCardFile_t *DL_SDCARD_Open(SDCardInfo_t *SDCard, const char *fileName, uint8_t attrib){
     if(strlen(fileName) > SDCARD_MAX_FILENAME) {
-        DBG("SDCard Filename is too long\n");
+        DBG("SDCard Filename is too long");
         return 0;
     }
     SDCardFile_t *file = (SDCardFile_t *)malloc(sizeof(SDCardFile_t));
     if (!file) {
-        DBG("Failed to allocate memory inside SDCARD_OPEN()\nPossible memory leak\n");
+        DBG("Failed to allocate memory inside SDCARD_OPEN()\r\nPossible memory leak");
         return 0;
     }
     memset(file, 0, sizeof(SDCardFile_t));          // Bring all zeroes
 
     if (!findFile(fileName, file, SDCard)){         // If none found
         if (attrib == FILE_READ) {                  // If we only need to read file, then we go out returning nothing
-            DBGF("No such file: \"%s\"\n", fileName);
+            DBGF("No such file: \"%s\"", fileName);
             free(file);                             //? What if we create a sturcture inside stack, and only before we found file we call malloc
             return 0;
         } else {
             // Here is file created
-            DBG("Creating file...\n");
-            createFile(SDCard, file, fileName);
+            DBG("Creating file...");
+            if (!createFile(SDCard, file, fileName)) {
+                DBG("Failed to create file!");
+                free(file);
+                return 0;
+            }
             free(file);
             return 0;
         }
@@ -139,7 +148,7 @@ uint8_t DL_SDCard_FileRead(SDCardInfo_t *SDCard, SDCardFile_t *file, uint8_t *bu
     uint32_t writePointer = 0;
     // uint32_t bytesWritten = 0; // Not used?
     uint8_t temp[512] = {0};
-    DBG("Reading file\n");
+    DBG("Reading file");
 
     
     
@@ -149,11 +158,11 @@ uint8_t DL_SDCard_FileRead(SDCardInfo_t *SDCard, SDCardFile_t *file, uint8_t *bu
         uint32_t byte = file->readPosition - (512 * SDCard->sectorsPerCluster * clust + page * 512);
         uint32_t toRead = (bytesToRead + byte - 1) / 512 + 1;
         uint32_t clustChain = getClusterChained(SDCard, file->dataClusterStart, clust);
-        DBGF("Cluster offset: %u\n", clust);
-        DBGF("Page offset: %u\n", page);
-        DBGF("Byte offset: %u\n", byte);
-        DBGF("Pages to read: %u\n", toRead);
-        DBGF("Cluster to read: %u\n", clustChain);
+        DBGF("Cluster offset: %u", clust);
+        DBGF("Page offset: %u", page);
+        DBGF("Byte offset: %u", byte);
+        DBGF("Pages to read: %u", toRead);
+        DBGF("Cluster to read: %u", clustChain);
 
         uint32_t addr = SDCard->PartitionLBA + SDCard->rootLBA + ((clustChain - 2) * 64 + page);
         //DBGF("Reading LBA: %u\n", addr);
@@ -190,6 +199,8 @@ static inline uint32_t getAvailableEntryPos(SDCardInfo_t *card, uint32_t entryCo
     uint32_t freeFound = 0;
     while (1) {
         uint32_t res = readEntry(card, entry, entryPos + freeFound);
+        DBGF("Getting entry info at %u", entryPos + freeFound);
+        DBGH((char *)entry, 32);
         if (!res) {     // If we got zero then maybe we approached end of cluster
             if (didExpand) {
                 DBG("Cluster expand try to execute second try. Stopping");
@@ -207,7 +218,6 @@ static inline uint32_t getAvailableEntryPos(SDCardInfo_t *card, uint32_t entryCo
 
         if (entry[0x0] == 0xE5 || entry[0x0] == 0) {
             freeFound++;
-            continue;
         } else {
             entryPos += freeFound;
             entryPos ++;
@@ -243,13 +253,17 @@ static inline uint8_t  writeEntry(SDCardInfo_t *card, uint32_t pos, uint8_t *dat
     uint8_t buffer[512];
     offset_t offset = calculateOffsets(card, pos, 32);
     uint32_t clusterOffset = getClusterChained(card, card->rootStartClusterNumber, offset.clust_offset);
+    DBG("Write entry page hex");
 
     uint32_t addr = card->PartitionLBA + card->rootLBA + ((clusterOffset - 2) * card->sectorsPerCluster + offset.page_offset);
     if (!readPageCached(card, addr, buffer)) {
         return 0;
     }
+    DBGH(buffer, 512);
 
-    memcpy(data, &buffer[offset.pos_offset], 32);
+    memcpy(&buffer[offset.pos_offset], data, 32);
+    DBG("\r\nAfter Modification:");
+    DBGH(buffer, 512);
     DL_SDCARD_WritePage(addr, buffer);
     return 1;
 }
@@ -313,7 +327,7 @@ static uint8_t readPageCached(SDCardInfo_t *card, uint32_t Addr, uint8_t *buffer
 }
 
 static uint8_t findFile (const char *fileName, SDCardFile_t *file, SDCardInfo_t *card){
-    DBGF("Searching for %s", fileName);
+    DBGF("Searching for %s...", fileName);
     uint8_t entry[32];
     uint32_t pos = 0;
     uint32_t lfnCount = 0;
@@ -359,7 +373,7 @@ static uint8_t findFile (const char *fileName, SDCardFile_t *file, SDCardInfo_t 
 
         DBGF("Cheking: %s", name);
         if (strcmp((char *)name, fileName) == 0) {
-            DBG("Found File\n");
+            DBG("Found File");
 	    file->EntryPos = pos;
             free(name);
             return 1;
@@ -378,13 +392,13 @@ static uint32_t createFile(SDCardInfo_t *card, SDCardFile_t *file, const char *n
     // Processing file name to define SFN and LFN
     uint32_t len = strlen(name);
     if (len > DL_FILENAME_MAX) {
-        DBG("Filename too big\n");
+        DBG("Filename too big");
         return 0;
     }
 
     // Getting count of LFN entries
     uint32_t lfnCount = (len * 2 - 1 ) / 25 + 1 ;
-    DBGF("File will be created with %u LFNs\n", lfnCount);
+    DBGF("File will be created with %u LFNs", lfnCount);
 
     // Create UCS2 string and fill it with name
     uint16_t *ucs2 = (uint16_t *) calloc(len, sizeof(uint16_t));
@@ -397,32 +411,35 @@ static uint32_t createFile(SDCardInfo_t *card, SDCardFile_t *file, const char *n
     // Now we find clear space to write our structures
     
     uint32_t entryNum = 0;
-    uint8_t entry[32];
-    while(1) {
-        readEntry(card, entry, entryNum);
-        
-        if (entry[0x0] == 0xE5 || entry[0x0] == 0x0) {  // If we found one empty place, we should check next
-            readEntry(card, entry, entryNum + 1);       // Checking next
-            if (entry[0x0] == 0xE5 || entry[0x0] == 0x0) {   // TODO: it should consider lfn count and then check all them, for now we assume there is no more than 1 LFN
-                break; 
-            } else {
-                entryNum++;     // We increase because we already checked next one, and it's not suitable
-            }
-        }    
+    uint8_t entry[32] = {
+        'S', 'T', 'M', ' ', ' ', ' ', ' ', ' ', // Filename
+        'T', 'X', 'T',              //Extension
+        0x20,           // Attrib
+        0,              // More attrib
+        0,              // Creation 10ms units
+        0, 0,           // Creation time H.M.S
+        0, 0,           // Creation date
+        0, 0,           // Last accessed date
+        0, 0,           // High cluster
+        0, 0,           // Last modified time
+        0, 0,           // Last modified date
+        0, 0xA,         // Low cluster
+        0, 0, 0, 0      // Size in bytes
+    };
 
-        entryNum++; // Proceed to next one 
-    }
-    
+
+
+    entryNum = getAvailableEntryPos(card, 1); // +1 for SFN entry    
     if (!entryNum) {
         DBG("Failed to find empty place to write file entry\n");
         return 0;
     }
-    // So here we have to write our entry
-    
 
-
-    
-
+    DBGF("Found suitable position: %u", entryNum);
+    if (!writeEntry(card, entryNum, entry)) {
+        DBG("Failed to write entry");
+        return 0;
+    }
     return 1;
 }
 

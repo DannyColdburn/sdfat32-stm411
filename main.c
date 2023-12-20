@@ -16,20 +16,19 @@ int main(){
 
     // CHECK READING OPERATION
     SDCardFile_t *file;
-    file = DL_SDCARD_Open(&CardInfo, "ABCD.txt", FILE_READ);
-    if(!file) {
-        DBG("File ABCD.txt not found\n");
-        goto skip;
-    }
+    // file = DL_SDCARD_Open(&CardInfo, "ABCD.txt", FILE_READ);
+    // if(!file) {
+    //     DBG("File ABCD.txt not found\n");
+    //     goto skip;
+    // }
 
-    uint8_t content[2048] = {0};
-    while (DL_SDCard_FileRead(&CardInfo, file, content, 129)) {
-        //DBGF("%s\n", content);
-        USART_Send(content);
-        DL_delay_ticks(5000000);
-    }
-    free(file);
-
+    // uint8_t content[2048] = {0};
+    // while (DL_SDCard_FileRead(&CardInfo, file, content, 129)) {
+    //     //DBGF("%s\n", content);
+    //     USART_Send(content);
+    //     DL_delay_ticks(5000000);
+    // }
+    // free(file);
 
     file = DL_SDCARD_Open(&CardInfo, "myfile.txt", FILE_WRITE);
     if(!file){
