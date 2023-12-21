@@ -112,6 +112,9 @@ uint8_t DL_SDCARD_Init(SPI_TypeDef *spi_instance, GPIO_TypeDef *CS_Port, uint8_t
 }
 
 uint8_t DL_SDCARD_WritePage(uint32_t addr, uint8_t *data){
+    // How it should be
+    // Sending CMD24 -> Getting R1 resp -> Send one byte -> Sending data tocken -> Send Data Packet -> Getting Data Resp. -> 
+    // -> SDCard goes busy -> Wait for Busy end
     uint8_t r1;
     uint8_t dataResp;
 
@@ -123,6 +126,13 @@ uint8_t DL_SDCARD_WritePage(uint32_t addr, uint8_t *data){
     }
     // Writing data
     cs_assert();
+    r1 = getByte();
+    if (r1 != 0xFF) {
+        DBG("Failed to get 0xFF before sending data packet");
+        return 0;
+    }
+    spi_send_byte(0xFE); // Command tocken 'Data start'
+
     for (int i = 0; i < 512; i++) {
         spi_send_byte(data[i]);
     }
@@ -167,6 +177,7 @@ uint8_t DL_SDCARD_WritePage(uint32_t addr, uint8_t *data){
     for (int i = 0; i < 10; i++){
         spi_read_byte();
     }
+    delay(50);
     cs_deassert();
     return 0;
 }
@@ -175,7 +186,15 @@ uint8_t DL_SDCARD_WritePage(uint32_t addr, uint8_t *data){
 uint8_t DL_SDCARD_Read(uint32_t addr, uint8_t *buffer){
     uint8_t r1;
     uint8_t dataTokenFound = 0;
-    uint8_t tryCount = 20;
+    uint8_t tryCount = 30;
+
+    while(getByte() != 0xFF) {
+        if(!--tryCount) {
+            DBG("Card locked in busy state");
+            return 0;
+        }
+    }
+    tryCount = 20;
 
     send_command(READ_SINGLE_BLOCK, addr);
     r1 = getByte();
