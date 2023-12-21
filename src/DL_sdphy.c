@@ -186,7 +186,15 @@ uint8_t DL_SDCARD_WritePage(uint32_t addr, uint8_t *data){
 uint8_t DL_SDCARD_Read(uint32_t addr, uint8_t *buffer){
     uint8_t r1;
     uint8_t dataTokenFound = 0;
-    uint8_t tryCount = 20;
+    uint8_t tryCount = 30;
+
+    while(getByte() != 0xFF) {
+        if(!--tryCount) {
+            DBG("Card locked in busy state");
+            return 0;
+        }
+    }
+    tryCount = 20;
 
     send_command(READ_SINGLE_BLOCK, addr);
     r1 = getByte();

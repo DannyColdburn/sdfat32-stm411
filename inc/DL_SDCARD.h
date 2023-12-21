@@ -60,6 +60,8 @@ uint8_t DL_SDCARD_Mount(SDCardInfo_t *SDCardInfo);
 SDCardFile_t *DL_SDCARD_Open(SDCardInfo_t *SDCard, const char *fileName, uint8_t attrib);
 
 
+uint8_t DL_SDCard_WriteString(SDCardInfo_t *SDCard, SDCardFile_t *file, uint8_t *string);
+
 uint8_t DL_SDCard_FileRead(SDCardInfo_t *SDCard, SDCardFile_t *file, uint8_t *buffer, uint32_t bytesToRead);
 
 /// @brief Manual data read

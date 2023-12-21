@@ -48,5 +48,5 @@ typedef struct{
 
 
 uint8_t SFNchecksum (uint8_t sfn[]);
-uint16_t fillFAT(FAT_eLFN **ppeLFN, uint8_t const lfnCount, FAT_eSFN *sfn, const char *ucs_name);
-uint8_t mkSFN(const uint8_t *name, uint8_t *sfn);
+uint8_t fillFAT(FAT_eLFN **ppeLFN, const uint8_t lfnCount, FAT_eSFN *eSFN, const char *ucs_name, const char *name);
+uint8_t mkSFN(const char *name, uint8_t *sfn);

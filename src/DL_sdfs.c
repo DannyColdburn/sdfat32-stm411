@@ -3,6 +3,7 @@
 #include "memory.h"
 #include "string.h"
 #include "DL_Debug.h"
+#include "fat_fnutils.h"
 
 #define uint32_cast(x) (*(uint32_t *)(x))
 #define uint16_cast(x) (*(uint16_t *)(x))
@@ -54,23 +55,23 @@ static uint8_t readPageCached(SDCardInfo_t *card, uint32_t Addr, uint8_t *buffer
 
 
 uint8_t DL_SDCARD_Mount(SDCardInfo_t *SDCardInfo){
-
+    
     if (DL_SDCARD_Read(0, sd_buffer) == 0){
-        DBG("SDCard Failed to read Master Boot\n");
+        DBG("SDCard Failed to read Master Boot");
         return 0;
     }
-    DBG("SDCard checking MBR...\n");
+    DBG("SDCard checking MBR...");
 
     //Checking MBR signature
     if (uint16_cast(&sd_buffer[0x1FE]) != 0xAA55) {
-        DBGF("SDCard SIGNATURE MISMATCH: %x\n", uint16_cast(&sd_buffer[0x1FE]));
+        DBGF("SDCard SIGNATURE MISMATCH: %x", uint16_cast(&sd_buffer[0x1FE]));
         return 0;
     }
-    DBG("SDCard Signature matched 0x55AA\n");
+    DBG("SDCard Signature matched 0x55AA");
     
     // 1st partition entry read and go
     SDCardInfo->PartitionLBA = uint32_cast(&sd_buffer[MBR_1PART_ENTRY + 0x8]);
-    DBGF("SDCard Partition block Address: %x\n", SDCardInfo->PartitionLBA);
+    DBGF("SDCard Partition block Address: %x", SDCardInfo->PartitionLBA);
 
     uint8_t tryCount = 4; 
     uint8_t res = 0;
@@ -87,7 +88,7 @@ uint8_t DL_SDCARD_Mount(SDCardInfo_t *SDCardInfo){
     }
 
     if (uint16_cast(&sd_buffer[0x1FE]) != 0xAA55){
-        DBGF("SDCard Partition Signature mismatch: %x!!!\n", uint16_cast(&sd_buffer[0x1FE]));
+        DBGF("SDCard Partition Signature mismatch: %x!!!", uint16_cast(&sd_buffer[0x1FE]));
         return 0;
     }    
     getPartitionInfo(SDCardInfo);  
@@ -124,8 +125,6 @@ SDCardFile_t *DL_SDCARD_Open(SDCardInfo_t *SDCard, const char *fileName, uint8_t
                 free(file);
                 return 0;
             }
-            free(file);
-            return 0;
         }
     }
 
@@ -138,6 +137,7 @@ uint8_t DL_SDCard_FileRead(SDCardInfo_t *SDCard, SDCardFile_t *file, uint8_t *bu
     uint32_t lastPosition = file->readPosition + bytesToRead;
 
     if (file->readPosition >= file->fileSize){
+        DBG("Read position is bigger than file size");
         return 0;
     }
 
@@ -189,6 +189,50 @@ uint8_t DL_SDCard_FileRead(SDCardInfo_t *SDCard, SDCardFile_t *file, uint8_t *bu
     return 1;       
 }
 
+uint8_t DL_SDCard_WriteString(SDCardInfo_t *SDCard, SDCardFile_t *file, uint8_t *string){
+    uint32_t len = strlen((char *) string);
+    uint32_t wPos = 0;
+    uint32_t bytesLeft = len;
+    uint8_t sector[512] = {0};
+
+    while(bytesLeft) {
+        DBGF("Bytes left %u", bytesLeft);
+        offset_t offset = calculateOffsets(SDCard, file->writePosition, 1);
+        uint32_t cluster = getClusterChained(SDCard, file->dataClusterStart, offset.clust_offset);
+        uint32_t addr = SDCard->PartitionLBA + SDCard->rootLBA + (cluster - 2) * 64 + offset.page_offset;
+        if (!DL_SDCARD_Read(addr, sector)) {
+            DBG("Read failed in WriteString");
+        }
+        // DBGH((char *)sector, 512);
+        
+        uint32_t toWrite = (512 - offset.pos_offset) < bytesLeft ? 512 - offset.pos_offset : bytesLeft;
+        // DBGF("toWrite %u", toWrite);
+        memcpy(&sector[offset.pos_offset], &string[wPos], toWrite);
+        // DBGH((char *)sector, 512);
+
+        if (!DL_SDCARD_WritePage(addr, sector)) {
+            DBG("Write failed in WriteString");
+        }
+
+        wPos += toWrite;
+        bytesLeft -= toWrite;
+        file->writePosition += toWrite;
+        file->fileSize += toWrite;
+        // DBGF("Bytes left %u", bytesLeft);
+    }
+
+    // Update file attrib;
+    DBG("Updating entry record");
+
+    uint8_t entry[32] = {0};
+    readEntry(SDCard, entry, file->EntryPos);
+    uint32_t *pSz = (uint32_t *)&entry[0x1C];
+    *pSz = file->fileSize;
+    writeEntry(SDCard, file->EntryPos, entry);
+
+    return 1;
+}
+
 // Will try to find entry position where is allowed to place
 // multiple entry depending on entryCount. WILL COUNT DELETED ENTRIES AS ALLOWED PLACE
 // Returns enry position on success, on fail - 0
@@ -200,7 +244,7 @@ static inline uint32_t getAvailableEntryPos(SDCardInfo_t *card, uint32_t entryCo
     while (1) {
         uint32_t res = readEntry(card, entry, entryPos + freeFound);
         DBGF("Getting entry info at %u", entryPos + freeFound);
-        DBGH((char *)entry, 32);
+        // DBGH((char *)entry, 32);
         if (!res) {     // If we got zero then maybe we approached end of cluster
             if (didExpand) {
                 DBG("Cluster expand try to execute second try. Stopping");
@@ -259,16 +303,16 @@ static inline uint8_t  writeEntry(SDCardInfo_t *card, uint32_t pos, uint8_t *dat
     if (!readPageCached(card, addr, buffer)) {
         return 0;
     }
-    DBGH((char *)buffer, 512);
+    // DBGH((char *)buffer, 512);
 
     memcpy(&buffer[offset.pos_offset], data, 32);
     DBG("\r\nAfter Modification:");
-    DBGH((char *)buffer, 512);
+    // DBGH((char *)buffer, 512);
     DL_SDCARD_WritePage(addr, buffer);
 
     DL_SDCARD_Read(addr, buffer);
     DBG("After write on card");
-    DBGH((char*) buffer, 512);
+    // DBGH((char*) buffer, 512);
     return 1;
 }
 
@@ -323,7 +367,7 @@ static uint8_t readPageCached(SDCardInfo_t *card, uint32_t Addr, uint8_t *buffer
             return 0;
         }
         // If read successfull
-        lastAddr = Addr;
+        //lastAddr = Addr;
     }
 
     memcpy(buffer, lastBuffer, 512);
@@ -395,51 +439,40 @@ static uint32_t readPtrToAddr(SDCardInfo_t *card, SDCardFile_t file){
 static uint32_t createFile(SDCardInfo_t *card, SDCardFile_t *file, const char *name){
     // Processing file name to define SFN and LFN
     uint32_t len = strlen(name);
-    if (len > DL_FILENAME_MAX) {
+    if (len > 12) {
         DBG("Filename too big");
         return 0;
     }
-
-    // Getting count of LFN entries
-    uint32_t lfnCount = (len * 2 - 1 ) / 25 + 1 ;
-    DBGF("File will be created with %u LFNs", lfnCount);
-
-    // Create UCS2 string and fill it with name
-    uint16_t *ucs2 = (uint16_t *) calloc(len, sizeof(uint16_t));
-    if (!ucs2) {
-        return 0;
-    }
-    name2ucsConvention(name, ucs2);
-    DBGH((char *) ucs2, len * 2);
-
-    // Now we find clear space to write our structures
     
     uint32_t entryNum = 0;
-    uint8_t entry[32] = {
-        'S', 'T', 'M', ' ', ' ', ' ', ' ', ' ', // Filename
-        'T', 'X', 'T',              //Extension
-        0x20,           // Attrib
-        0,              // More attrib
-        0,              // Creation 10ms units
-        0, 0,           // Creation time H.M.S
-        0, 0,           // Creation date
-        0, 0,           // Last accessed date
-        0, 0,           // High cluster
-        0, 0,           // Last modified time
-        0, 0,           // Last modified date
-        0, 0xA,         // Low cluster
-        0, 0, 0, 0      // Size in bytes
-    };
+    uint32_t clusterNum = 0;
+    uint8_t  entry[32] = {0};
+    
+    uint8_t strName[8] = {0};
+    memset(strName, ' ', 8);
+
+
+    char *delim = strchr(name, '.');
+    memcpy(strName, name, delim - name);
+
+    memcpy(entry, strName, 8);
+    memcpy(&entry[0x08], "TXT", 3);
+    entry[0x0B] = 0x20;
+    
+
+    while(readClusterValue(card, ++clusterNum));
+    
+    uint16_t *lowClust = (uint16_t *) &entry[0x1A];
+    uint16_t *highClust = (uint16_t *) &entry[0x14];
+
+    *lowClust = clusterNum & 0xFFFF;
+    *highClust = (clusterNum & 0xFFFF0000) >> 16;
 
     DBG("Will write entry:");
-    DBGH(entry, 32);
-    DBGC(entry, 32);
-
-
 
     entryNum = getAvailableEntryPos(card, 1); // +1 for SFN entry    
     if (!entryNum) {
-        DBG("Failed to find empty place to write file entry\n");
+        DBG("Failed to find empty place to write file entry");
         return 0;
     }
 
@@ -448,6 +481,15 @@ static uint32_t createFile(SDCardInfo_t *card, SDCardFile_t *file, const char *n
         DBG("Failed to write entry");
         return 0;
     }
+
+    if (!writeCluster(card, clusterNum, 0x0FFFFFFF)) {
+        DBG("Cluster write failed");
+        return 0;
+    }
+
+    file->EntryPos = entryNum;
+    file->dataClusterStart = clusterNum;
+
     return 1;
 }
 
@@ -525,14 +567,19 @@ static uint32_t getNextCluster(SDCardInfo_t *card, uint32_t cluster){
 }
 
 static uint8_t  getFileAttrib(SDCardInfo_t *card, SDCardFile_t *file){
-    uint8_t *entry = &sd_buffer[file->EntryPos * 32 + 256];
+    // uint8_t *entry = &sd_buffer[file->EntryPos * 32 + 256];
+    uint8_t entry[32] = {0};
+    readEntry(card, entry, file->EntryPos);
     file->fileSize = uint32_cast(&entry[0x1C]);
+    DBGF("File size: %u", file->fileSize);
     file->bytesLeftToRead = file->fileSize;
     // DBGF("File size: %u bytes\n", file->fileSize);
+    if (file->fileSize) file->writePosition = file->fileSize - 1;
+    //file->writePosition = file->fileSize; // TODO is this really good?
     uint32_t clusterNumber = 0;
     clusterNumber |= (uint16_cast(&entry[0x14]) << 16) | uint16_cast(&entry[0x1A]);
     file->dataClusterStart = clusterNumber;
-    // DBGF("File data cluster: %u\n", file->dataClusterStart);
+    DBGF("File data cluster: %u", file->dataClusterStart);
     return 1; 
 }
 
@@ -623,17 +670,17 @@ getPartitionInfo(SDCardInfo_t *cardInfo){
     cardInfo->clusterSize = cardInfo->sectorsPerCluster * cardInfo->bytesPerSector;
     cardInfo->clusterMapLBA = cardInfo->PartitionLBA + cardInfo->reservedSectorCount;
     #ifdef DEBUG_D
-        DBG( "SDCard Partition info:\n");
-        DBGF("  Bytes per Sector: %u\n", uint16_cast(&sd_buffer[0x0B]));
-        DBGF("  Sectors per Cluster: %u\n", cardInfo->sectorsPerCluster);
-        DBGF("  Reserved Sector Count: %u\n", cardInfo->reservedSectorCount);
-        DBGF("  Number of FAT copies: %u\n", cardInfo->numberOfFatCopies);
-        DBGF("  Number of Sector in Partition: %u\n", cardInfo->numberOfSectors);
-        DBGF("  Sectors per FAT: %u\n", cardInfo->sectorsPerFat);
-        DBGF("  Cluster number of root: %u\n", cardInfo->rootStartClusterNumber);
-        DBGF("  Calculated root LBA: %u\n", cardInfo->rootLBA);
-        DBGF("  Cluster size in bytes: %u\n", cardInfo->clusterSize);
-        DBGF("  Cluster map LBA: %u\n", cardInfo->clusterMapLBA);
+        DBG( "SDCard Partition info:");
+        DBGF("  Bytes per Sector: %u", uint16_cast(&sd_buffer[0x0B]));
+        DBGF("  Sectors per Cluster: %u", cardInfo->sectorsPerCluster);
+        DBGF("  Reserved Sector Count: %u", cardInfo->reservedSectorCount);
+        DBGF("  Number of FAT copies: %u", cardInfo->numberOfFatCopies);
+        DBGF("  Number of Sector in Partition: %u", cardInfo->numberOfSectors);
+        DBGF("  Sectors per FAT: %u", cardInfo->sectorsPerFat);
+        DBGF("  Cluster number of root: %u", cardInfo->rootStartClusterNumber);
+        DBGF("  Calculated root LBA: %u", cardInfo->rootLBA);
+        DBGF("  Cluster size in bytes: %u", cardInfo->clusterSize);
+        DBGF("  Cluster map LBA: %u", cardInfo->clusterMapLBA);
     #endif
 
     return 1;

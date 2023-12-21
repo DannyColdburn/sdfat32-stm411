@@ -31,8 +31,10 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
 )
 
 target_compile_options(
-    ${PROJECT_NAME} PRIVATE -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -ffunction-sections -O0 -Wall -pedantic
+    ${PROJECT_NAME} PRIVATE -mcpu=cortex-m4 -mthumb -mfloat-abi=softfp -ffunction-sections -O0 -Wall -pedantic
 )
+
+#-mfpu=fpv4-sp-d16
 
 target_include_directories(
     ${PROJECT_NAME} PRIVATE 

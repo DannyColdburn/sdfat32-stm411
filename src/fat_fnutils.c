@@ -1,11 +1,14 @@
 #include <string.h>
 #include <ctype.h>
+#include <malloc.h>
+#include <wchar.h>
 #include "fat_fnutils.h"
+#include "DL_Debug.h"
 
 
 uint8_t SFNchecksum(uint8_t *shortname){
     uint8_t checksum = 0;
-    int i = 0;
+    // uint32_t i = 0;
 
     for(int i = 0; i < 11; i++){
         checksum = ((checksum & 1) ? 0x80 : 0) + (checksum >> 1) + shortname[i];
@@ -15,22 +18,26 @@ uint8_t SFNchecksum(uint8_t *shortname){
 }
 
 
-uint8_t mkSFN(const uint8_t *name, uint8_t *sfn){
+uint8_t mkSFN(const char *name, uint8_t *sfn){
     /*
     Short file name is 11 bytes max, therefore sfn field must be the same
     Function strips null terminator, sfn field size is guaranteed by FAT specification
     Conversion strips bytes over max - 10 bytes, appends ~1 and 6 bytes of extension
-    Returns 0 on success
+    Returns 1 on success
     */
-    uint8_t *buffer = malloc(strlen(name));
+    char *buffer = (char *)calloc(strlen(name) + 1, sizeof(char));
+    if (!buffer) {
+        DBG("Failed to mallo at mkSFN()");
+        return 0;
+    }
     uint8_t lossy = 0;
     
 
     strcpy(buffer, name);
 
-    uint8_t *ext = strrchr(buffer, '.');
-    uint8_t *end = strchr(buffer, '\0');
-    uint8_t *s = 0;
+    char *ext = strrchr(buffer, '.');
+    char *end = strchr(buffer, '\0');
+    char *s = 0;
 
     if(!(ext == 0)){
         //Cut excess bytes from name body
@@ -63,7 +70,7 @@ uint8_t mkSFN(const uint8_t *name, uint8_t *sfn){
 
     //Convert lowercase characters to uppercase
     for(size_t i = 0; i < strlen(name); i++){
-        toupper(buffer + i);
+        toupper(buffer[i]);
     }
     
     //Remove spaces
@@ -75,17 +82,17 @@ uint8_t mkSFN(const uint8_t *name, uint8_t *sfn){
     }
 
     //Replace any non-ASCII + extended characters with '_'
-    for(uint8_t i = 0; i < srtlen(name); i++){
-        if((*(buffer + i) < 33 || *(buffer + i) > 126) &&
-            *(buffer + i) < 0x80 || *(buffer + i) > 0xFF &&
-            *(buffer + i) != 0x7f){
+    for(uint8_t i = 0; i < strlen(name); i++){
+        if(((*(buffer + i) < 33 || *(buffer + i) > 126)) &&
+            (*(buffer + i) < 0x80 || *(buffer + i) > 0xFF) &&
+            (*(buffer + i) != 0x7f)){
                 *(buffer + i) = '_';
                 lossy |= 0x1;
         }
     }
 
     s = buffer;
-    for(size_t i = 0; i < strlen(sfn); i++){
+    for(size_t i = 0; i < strlen((char *)sfn); i++){
         while(  *s == '\0' ||
                 *s == 0x7f ||
                 *s == '.'){
@@ -93,23 +100,37 @@ uint8_t mkSFN(const uint8_t *name, uint8_t *sfn){
             s++;
         }
 
-        *(sfn + i) = s;
+        *(sfn + i) = *s;
     }
+
+    if (lossy == 1) memcpy(sfn + 6, "~1", 2);
     
     free(buffer);
 
-    return 0;
+    return 1;
 }
 
 
-uint16_t fillFAT(FAT_eLFN **ppeLFN, uint8_t const lfnCount, FAT_eSFN *eSFN, const char *ucs_name, const char name){
+uint8_t fillFAT(FAT_eLFN **ppeLFN, const uint8_t lfnCount, FAT_eSFN *eSFN, const char *ucs_name, const char *name){
     /*
     Fills structs for lfn and sfn FAT32 filename
     Writes into accepted structs
-    Returns 0 on success
+    Returns 1 on success
     */
-    const uint8_t *shortname = malloc(11);
-    mkSFN(name, shortname);
+    uint8_t *shortname = calloc(11, sizeof(uint8_t));
+    mkSFN((char *)name, (uint8_t *) shortname);
+
+    uint32_t ucs2_len = (strlen(name) + 1);
+    uint16_t *ucs2_name = calloc(ucs2_len, sizeof(uint16_t));
+    if (!ucs2_name) {
+        DBG("Malloc failed fillFAT()");
+        return 0;
+    }
+
+    // Naming convertion
+    for (int i = 0; i < strlen(name); i ++){
+        ucs2_name[i] = (uint16_t) (name[i]);
+    }
 
     //setting up short filename entry
     memcpy(eSFN->DIR_Name, shortname, 8);
@@ -132,28 +153,34 @@ uint16_t fillFAT(FAT_eLFN **ppeLFN, uint8_t const lfnCount, FAT_eSFN *eSFN, cons
     free(shortname);
 
     {
-    FAT_eLFN *peLFN = ppeLFN;
+    FAT_eLFN *peLFN = 0; // ppeLFN[0];
 
     //fill in everything except the name
-    for(uint8_t order = 1; order <= lfnCount; order++){
-        peLFN->LDIR_Ord = order == lfnCount ? LDIR_NAME_END : order;
+    for(uint8_t order = 0; order < lfnCount; order++){
+        peLFN = ppeLFN[order];
+        peLFN->LDIR_Ord = order + 1 == lfnCount ? LDIR_NAME_END : order + 1;
         peLFN->LDIR_Attrs       =  DIR_ENTRY_ATTR_LONG_NAME;
         peLFN->LDIR_Type        =  LDIR_TYPE;
         peLFN->LDIR_FstClustLO  =  0x0;
         peLFN->LDIR_Chksum      =  checksum;
-        peLFN = ppeLFN + 1;
+        // peLFN = ppeLFN[order];
     }
 
     //lfn name processing
-    const uint16_t *lfn = malloc(lfnCount * 13 * sizeof(uint16_t));
-    memset(lfn, 0, lfnCount * 13 * sizeof(uint16_t));
+    uint16_t *lfn = calloc((lfnCount * 13), sizeof(uint16_t));
+    memcpy(lfn, ucs2_name, ucs2_len * sizeof(uint16_t));
 
-    memcpy(lfn, ucs_name, wcslen(ucs_name));
-    memset(lfn + wcslen(ucs_name), 0xFF, wcschr(lfn, 0x00) - lfn);
+    memset(lfn + ucs2_len, 0xFF, (lfnCount * 13) - ucs2_len);
+
+
+    //memset(lfn + wcslen(ucs_name), 0xFF, (wcschr(lfn, L"\0") - lfn));
 
     peLFN = ppeLFN;
     uint16_t plfn = lfn;
     for(size_t i = 0; i < lfnCount; i++){
+        peLFN = ppeLFN[i];
+
+
         memcpy(peLFN->LDIR_Name1, lfn, 10);
         memcpy(peLFN->LDIR_Name2, lfn + 10, 12);
         memcpy(peLFN->LDIR_Name1, lfn + 22, 4);
