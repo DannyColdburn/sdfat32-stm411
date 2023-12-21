@@ -7,11 +7,8 @@ void Init_Periphery();
 int main(){
     Init_Periphery();
 
-    uint8_t test[128] = {0};
-    sprintf((char *) test, "%.3f, %.5f", 0.13224, 1.3145);
-    DBGF("Hehe %s", test);
-
     DBG("\r\n\r\n--- Program started ---\n");
+
     if (!DL_SDCARD_Init(SPI1, GPIOA, 4)) goto skip;
     DBG("- Mounting SD Card -\n");
     SDCardInfo_t CardInfo = {0};
