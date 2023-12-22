@@ -189,10 +189,12 @@ uint8_t DL_SDCARD_Read(uint32_t addr, uint8_t *buffer){
     uint8_t tryCount = 30;
 
     while(getByte() != 0xFF) {
+        DBG("Card is busy");
         if(!--tryCount) {
             DBG("Card locked in busy state");
             return 0;
         }
+        delay(10000);
     }
     tryCount = 20;
 
@@ -219,6 +221,9 @@ uint8_t DL_SDCARD_Read(uint32_t addr, uint8_t *buffer){
     for(int i = 0; i < 512; i++){
         buffer[i] = getByte();
     }
+
+    getByte();  // This 2 bytes are CRC
+    getByte();
 
     return 1;
 }
