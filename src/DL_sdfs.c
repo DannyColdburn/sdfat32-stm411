@@ -194,14 +194,29 @@ uint8_t DL_SDCard_WriteString(SDCardInfo_t *SDCard, SDCardFile_t *file, uint8_t 
     uint32_t wPos = 0;
     uint32_t bytesLeft = len;
     uint8_t sector[512] = {0};
+    uint8_t expandedOnce = 0;
 
     while(bytesLeft) {
         DBGF("Bytes left %u", bytesLeft);
         offset_t offset = calculateOffsets(SDCard, file->writePosition, 1);
         uint32_t cluster = getClusterChained(SDCard, file->dataClusterStart, offset.clust_offset);
+        if (!cluster) {
+            if(!expandedOnce) {
+                DBG("Unreachable cluster found. Expanding...");
+                if (!expandCluster(SDCard, cluster)) {
+                    DBG("Cluster expanding failed. Aborting");
+                    return 0;
+                }
+            } else {
+                DBG("Second try to expand cluster detected. Aborting");
+                return 0;
+            }
+        }
+
         uint32_t addr = SDCard->PartitionLBA + SDCard->rootLBA + (cluster - 2) * 64 + offset.page_offset;
         if (!DL_SDCARD_Read(addr, sector)) {
-            DBG("Read failed in WriteString");
+            DBG("Read failed in WriteString. Aborting");
+            return 0;
         }
         // DBGH((char *)sector, 512);
         
@@ -212,6 +227,7 @@ uint8_t DL_SDCard_WriteString(SDCardInfo_t *SDCard, SDCardFile_t *file, uint8_t 
 
         if (!DL_SDCARD_WritePage(addr, sector)) {
             DBG("Write failed in WriteString");
+            return 0;
         }
 
         wPos += toWrite;
@@ -225,10 +241,16 @@ uint8_t DL_SDCard_WriteString(SDCardInfo_t *SDCard, SDCardFile_t *file, uint8_t 
     DBG("Updating entry record");
 
     uint8_t entry[32] = {0};
-    readEntry(SDCard, entry, file->EntryPos);
+    if (!readEntry(SDCard, entry, file->EntryPos)) {
+        DBG("Failed to read entry in WriteString()");
+        return 0;
+    }
     uint32_t *pSz = (uint32_t *)&entry[0x1C];
     *pSz = file->fileSize;
-    writeEntry(SDCard, file->EntryPos, entry);
+    if (!writeEntry(SDCard, file->EntryPos, entry)) {
+        DBG("Failed to update entry");
+        return 0;
+    }
 
     return 1;
 }
