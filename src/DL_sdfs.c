@@ -52,6 +52,7 @@ static uint8_t         writeCluster(SDCardInfo_t *card, uint32_t pos, uint32_t v
 static uint32_t        getLastClusterPos(SDCardInfo_t *card, uint32_t cluster);
 static inline offset_t  calculateOffsets(SDCardInfo_t *card, uint32_t position, uint32_t sizeInBytes);
 static uint8_t readPageCached(SDCardInfo_t *card, uint32_t Addr, uint8_t *buffer); // Use it if you need to read one page multiple time
+static uint32_t expandFileCluster(SDCardInfo_t *SDCard, uint32_t cluster);
 
 
 uint8_t DL_SDCARD_Mount(SDCardInfo_t *SDCardInfo){
@@ -203,13 +204,14 @@ uint8_t DL_SDCard_WriteString(SDCardInfo_t *SDCard, SDCardFile_t *file, uint8_t 
 
     while(bytesLeft) {
         DBGF("Bytes left %u", bytesLeft);
+
         offset_t offset = calculateOffsets(SDCard, file->writePosition, 1);
         uint32_t cluster = getClusterChained(SDCard, file->dataClusterStart, offset.clust_offset);
+
         if (!cluster) {
             if(!expandedOnce) {
                 DBG("Unreachable cluster found. Expanding...");
-                uint32_t clusterToExpand = getClusterChained(SDCard, file->dataClusterStart, offset.clust_offset - 1);
-                if (!expandCluster(SDCard, clusterToExpand)) {
+                if (!expandFileCluster(SDCard, file->dataClusterStart)) {
                     DBG("Cluster expanding failed. Aborting");
                     return 0;
                 }
@@ -272,7 +274,7 @@ static inline uint32_t getAvailableEntryPos(SDCardInfo_t *card, uint32_t entryCo
     while (1) {
         uint32_t res = readEntry(card, entry, entryPos + freeFound);
         DBGF("Getting entry info at %u", entryPos + freeFound);
-        // DBGH((char *)entry, 32);
+        DBGH((char *)entry, 32);
         if (!res) {     // If we got zero then maybe we approached end of cluster
             if (didExpand) {
                 DBG("Cluster expand try to execute second try. Stopping");
@@ -319,6 +321,40 @@ static inline uint32_t expandCluster(SDCardInfo_t *card, uint32_t cluster) {
     writeCluster(card, cluster, nextFreeClusterPos);
     writeCluster(card, nextFreeClusterPos, 0x0FFFFFFF);
     return nextFreeClusterPos;
+}
+
+static uint32_t expandFileCluster(SDCardInfo_t *card, uint32_t startCluster) {
+    // For now we need to find EOC
+    uint32_t nextFreeCluster = 0;
+    uint32_t lastPos = startCluster;
+    uint32_t lastValue = 0;
+    while(1) {
+        lastValue = readClusterValue(card, lastPos);
+        if (lastValue == 0x0FFFFFFF) {
+            break; // We at the end of cluster, proceed to expanding
+        } else if (!lastValue) {
+            DBG("ERR: Something went wrong at expandFileCluster");
+            DBG("ERR: Recieved 0 as last value");
+        } else {
+            // In this case we found a next cluster number in cluster map
+            lastPos = lastValue;
+            continue;
+        }
+    }
+
+    while(!readClusterValue(card, ++nextFreeCluster));
+
+    if (!writeCluster(card, lastPos, nextFreeCluster)) {
+        DBG("ERR: Failed to expand file cluster 1. Aborting");
+        return 0;
+    }
+
+    if (!writeCluster(card, nextFreeCluster, 0x0FFFFFFF)) {
+        DBG("ERR: failed to expand file cluster 2. Aborting");
+        return 0;
+    }
+
+    return 1;
 }
 
 static inline uint8_t  writeEntry(SDCardInfo_t *card, uint32_t pos, uint8_t *data) {
@@ -545,7 +581,7 @@ static uint8_t  readEntry(SDCardInfo_t *card, uint8_t *entry, uint32_t number){
     }
 
     uint32_t addr = card->PartitionLBA + card->rootLBA + ((clusterOffset - 2) * card->sectorsPerCluster + page);
-    // DBGF("Reading addr: %u", addr);
+    DBGF("Reading addr: %u", addr);
     uint8_t buff[512];
     DL_SDCARD_Read(addr, buff);
     memcpy(entry, &buff[pos], 32);

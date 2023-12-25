@@ -13,11 +13,18 @@ int main(void){
 
     DBG("\r\n\r\n--- Program started ---\n");
 
-    DL_SDCARD_Init(SPI1, GPIOA, 4);
+    while(!DL_SDCARD_Init(SPI1, GPIOA, 4)) {
+        DL_delay_ticks(10000000);
+        if(!tryCount --) {
+            goto skip;
+        }
+    }
+    tryCount = 3;
+
+
     while(!DL_SDCARD_Mount(&SDCard)) {
         DBG("Mount failed, try again...");
         DL_delay_ticks(10000000);
-        DL_SDCARD_Init(SPI1, GPIOA, 4);
         if(!tryCount--) {
             DBG("SDCard refuses to start");
             goto skip;
