@@ -31,21 +31,22 @@ int main(void){
         }
     }
 
-    file = DL_SDCARD_Open(&SDCard, "6.txt", FILE_WRITE);
+    file = DL_SDCARD_Open(&SDCard, "13.txt", FILE_WRITE);
     if (!file) goto skip;
 
-    for (int i = 0; i < 128; i++) {
+    for (int i = 0; i < 256; i++) {
         uint8_t data[180] = {0};
         sprintf((char *) data, "Wsssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssriting %i data with %i\r\n", i, i);
         if (!DL_SDCard_WriteString(&SDCard, file, data)) goto skip;
-        if (i % 16 == 0) {
+        if (i % 64 == 0) {
             uint8_t ss[128] = {0};
             file->readPosition = file->fileSize - 128;
             if (!DL_SDCard_FileRead(&SDCard, file, ss, 128)) {
                 DBG("Failed to read file");
-                DL_delay_ticks(1000000);
+                DL_delay_ticks(10000000);
             } else {
                 DBGC((char *)ss, 128);
+                DL_delay_ticks(10000000);
             }
         }
     }

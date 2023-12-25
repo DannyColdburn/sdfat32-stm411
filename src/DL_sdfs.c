@@ -207,6 +207,12 @@ uint8_t DL_SDCard_WriteString(SDCardInfo_t *SDCard, SDCardFile_t *file, uint8_t 
 
         offset_t offset = calculateOffsets(SDCard, file->writePosition, 1);
         uint32_t cluster = getClusterChained(SDCard, file->dataClusterStart, offset.clust_offset);
+        DBG("Writing in:");
+        DBGF("  Write Position: %u", file->writePosition);
+        DBGF("  Cluster offset: %u", offset.clust_offset);
+        DBGF("  Page offset: %u", offset.page_offset);
+        DBGF("  Pos offset: %u", offset.pos_offset);
+        DBGF("  Cluster chained: %u", cluster);
 
         if (!cluster) {
             if(!expandedOnce) {
@@ -325,24 +331,34 @@ static inline uint32_t expandCluster(SDCardInfo_t *card, uint32_t cluster) {
 
 static uint32_t expandFileCluster(SDCardInfo_t *card, uint32_t startCluster) {
     // For now we need to find EOC
-    uint32_t nextFreeCluster = 0;
+    uint32_t nextFreeCluster = 1;
     uint32_t lastPos = startCluster;
     uint32_t lastValue = 0;
+    DBGF("Expanding cluster from: %u", startCluster);
     while(1) {
         lastValue = readClusterValue(card, lastPos);
         if (lastValue == 0x0FFFFFFF) {
+            DBG("   Found EOC");
             break; // We at the end of cluster, proceed to expanding
         } else if (!lastValue) {
             DBG("ERR: Something went wrong at expandFileCluster");
             DBG("ERR: Recieved 0 as last value");
         } else {
-            // In this case we found a next cluster number in cluster map
+            // In this case we found a next cluster number in clusteUnreUnrer map
+            if (lastPos == lastValue) {
+                DBG("ERR: Cluster connected to itself. Aborting");
+                return 0;
+            }
             lastPos = lastValue;
+            DBGF("Last pos: %u\r\nLast Value: %u", lastPos, lastValue);
             continue;
         }
     }
 
-    while(!readClusterValue(card, ++nextFreeCluster));
+
+
+    while(readClusterValue(card, ++nextFreeCluster));
+    DBGF("Next free cluster: %u", nextFreeCluster);
 
     if (!writeCluster(card, lastPos, nextFreeCluster)) {
         DBG("ERR: Failed to expand file cluster 1. Aborting");
@@ -397,6 +413,9 @@ static inline uint32_t readClusterValue(SDCardInfo_t *card, uint32_t clusterPos)
     offset_t offset = calculateOffsets(card, clusterPos, 4);
     uint32_t addr = card->PartitionLBA + card->reservedSectorCount + offset.page_offset + (offset.clust_offset * card->sectorsPerCluster);
     readPageCached(card, addr, buffer);
+    // DBG("Cluster page dump");
+    // DBGH(buffer, 512);
+    // DL_delay_ticks(10000000);
     ret = uint32_cast(&buffer[offset.pos_offset]);
     return ret;
 }
@@ -604,10 +623,20 @@ static uint8_t readRootPage(SDCardInfo_t *SDCard, uint8_t *buffer, uint32_t page
 // 
 static uint32_t getClusterChained(SDCardInfo_t *card, uint32_t startSector, uint32_t steps){
     uint32_t temp = startSector;
-    while (steps--){
-        temp = getNextCluster(card, temp);
-        if (!temp) return 0;
+    // DBG("Cluster chained: ");
+    // DBGF("  Start Cluster: %u", temp);
+    //DBGF("  Steps: %u", steps);
+
+    if (!steps) {
+        return startSector;
     }
+
+    for(int i = 0; i < steps; i++){
+        temp = readClusterValue(card, temp);
+        // DBGF(" Next cluster value: %u", temp);
+        if (temp == 0x0FFFFFFF) return 0;
+    }
+    // DBGF("  Chain: %u", temp);
     return temp;     // In case steps is zero
 }
 
@@ -731,7 +760,7 @@ getPartitionInfo(SDCardInfo_t *cardInfo){
     cardInfo->sectorsPerFat = uint32_cast(&sd_buffer[0x24]);
     cardInfo->rootStartClusterNumber = uint32_cast(&sd_buffer[0x2C]);
     cardInfo->rootLBA = cardInfo->reservedSectorCount + (cardInfo->numberOfFatCopies * cardInfo->sectorsPerFat);
-    cardInfo->clusterSize = cardInfo->sectorsPerCluster * cardInfo->bytesPerSector;
+    cardInfo->clusterSize = 512 * 64;
     cardInfo->clusterMapLBA = cardInfo->PartitionLBA + cardInfo->reservedSectorCount;
     #ifdef DEBUG_D
         DBG( "SDCard Partition info:");
