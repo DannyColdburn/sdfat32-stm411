@@ -164,6 +164,11 @@ uint8_t DL_SDCard_FileRead(SDCardInfo_t *SDCard, SDCardFile_t *file, uint8_t *bu
         DBGF("Pages to read: %u", toRead);
         DBGF("Cluster to read: %u", clustChain);
 
+        if (!clustChain) {
+            DBG("ERR: Failed to get next cluster");
+            DBG("ERR: Check cluster chain");
+        }
+
         uint32_t addr = SDCard->PartitionLBA + SDCard->rootLBA + ((clustChain - 2) * 64 + page);
         //DBGF("Reading LBA: %u\n", addr);
 
@@ -203,7 +208,8 @@ uint8_t DL_SDCard_WriteString(SDCardInfo_t *SDCard, SDCardFile_t *file, uint8_t 
         if (!cluster) {
             if(!expandedOnce) {
                 DBG("Unreachable cluster found. Expanding...");
-                if (!expandCluster(SDCard, cluster)) {
+                uint32_t clusterToExpand = getClusterChained(SDCard, file->dataClusterStart, offset.clust_offset - 1);
+                if (!expandCluster(SDCard, clusterToExpand)) {
                     DBG("Cluster expanding failed. Aborting");
                     return 0;
                 }
