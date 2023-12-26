@@ -212,16 +212,16 @@ uint8_t DL_SDCARD_Read(uint32_t addr, uint8_t *buffer){
 
     send_command(READ_SINGLE_BLOCK, addr);
 
-    while(tryCount--) {
-        r1 = getByte();
-        if (r1 != 0xFF) {
-            break;
-        }
-        delay(100);
-    }
+    // while(tryCount--) {
+    //     r1 = getByte();
+    //     if (r1 != 0xFF) {
+    //         break;
+    //     }
+    //     delay(100);
+    // }
     tryCount = 20;
 
-    // r1 = getByte();
+    r1 = getByte();
     if (r1) {
         DBGF("SDCard Read error: %x\n", r1);
         if (!restart) {
