@@ -195,6 +195,9 @@ uint8_t DL_SDCARD_Read(uint32_t addr, uint8_t *buffer){
     uint8_t r1;
     uint8_t dataTokenFound = 0;
     uint8_t tryCount = 30;
+    uint8_t restart = 0;
+    start:
+
     cs_assert();
 
     while(getByte() != 0xFF) {
@@ -209,18 +212,25 @@ uint8_t DL_SDCARD_Read(uint32_t addr, uint8_t *buffer){
 
     send_command(READ_SINGLE_BLOCK, addr);
 
-    // while(tryCount--) {
-    //     r1 = getByte();
-    //     if (r1 != 0xFF) {
-    //         break;
-    //     }
-    //     delay(100);
-    // }
-    // tryCount = 20;
+    while(tryCount--) {
+        r1 = getByte();
+        if (r1 != 0xFF) {
+            break;
+        }
+        delay(100);
+    }
+    tryCount = 20;
 
-    r1 = getByte();
+    // r1 = getByte();
     if (r1) {
         DBGF("SDCard Read error: %x\n", r1);
+        if (!restart) {
+            restart = 1;
+            DL_SDCARD_Init(hSPI, csPort, csPin);
+            DBG("Rebooting");
+            goto start;
+        }
+
         return 0;
     }
     
