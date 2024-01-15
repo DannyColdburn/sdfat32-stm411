@@ -76,7 +76,10 @@ uint8_t DL_SDCARD_Read(uint32_t addr, uint8_t *buffer);
 /// @return Operation status
 uint8_t DL_SDCARD_WritePage(uint32_t addr, uint8_t *data);
 
+/// @brief DO NOT USE
+void DL_SDCARD_TestFunc();
 
+uint8_t *DL_SDCard_getLashError();
 
 
 #endif
