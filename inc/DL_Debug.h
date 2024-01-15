@@ -14,7 +14,7 @@
 
 #ifdef DEBUG_D
     #include "main.h"
-    #include "string.h"
+    #include <string.h>
     #include "stdio.h"
     #include "stdarg.h"
     #include "stm32f411xe.h"
@@ -59,7 +59,7 @@
             while(!(((USART_TypeDef*) DEBUG_UART)->SR & USART_SR_TXE));
             if ((i + 1) % 32 == 0) {
 		((USART_TypeDef*) DEBUG_UART)->DR = '\r';
-		while(!(((USART_TypeDef*) DEBUG_UART)->SR & USART_SR_TXE));
+		while(!(((USART_TypeDef*) DEBUG_UART)->SR & USART_SR_TXE)){;};
                 ((USART_TypeDef*) DEBUG_UART)->DR = '\n';
                 while(!(((USART_TypeDef*) DEBUG_UART)->SR & USART_SR_TXE));
             }
@@ -82,7 +82,7 @@
             while(!(((USART_TypeDef*) DEBUG_UART)->SR & USART_SR_TXE));
             if ((i + 1) % 32 == 0) {
 		((USART_TypeDef*) DEBUG_UART)->DR = '\r';
-		while(!(((USART_TypeDef*) DEBUG_UART)->SR & USART_SR_TXE));
+		while(!(((USART_TypeDef*) DEBUG_UART)->SR & USART_SR_TXE)) {;};
                 ((USART_TypeDef*) DEBUG_UART)->DR = '\n';
                 while(!(((USART_TypeDef*) DEBUG_UART)->SR & USART_SR_TXE));
             }

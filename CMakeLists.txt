@@ -27,7 +27,9 @@ file(GLOB_RECURSE SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/*.c)
 add_executable(${PROJECT_NAME} dev/start.c main.c ${SOURCES})
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE 
-    DEBUG_D
+    #DEBUG_D
+    #DEBUG_D0
+    #DEBUG_D1
 )
 
 target_compile_options(

@@ -41,6 +41,11 @@ static void     cs_deassert();
 static uint8_t  crc7_gen(uint8_t *data, uint8_t len);
 static void     delay(uint32_t t);
 
+
+void DL_SDCARD_TestFunc() {
+
+}
+
 // *** Global function definition ***/
 uint8_t DL_SDCARD_Init(SPI_TypeDef *spi_instance, GPIO_TypeDef *CS_Port, uint8_t cs_Pin){
     hSPI = spi_instance;
@@ -48,65 +53,72 @@ uint8_t DL_SDCARD_Init(SPI_TypeDef *spi_instance, GPIO_TypeDef *CS_Port, uint8_t
     csPin = cs_Pin;
 
     set_mode_spi();
-    DBG("SDCard switched to SPI mode. Sending CMD0\n");
-    send_command(CMD0, 0x0);
+    DBG("SDCard: SPI mode pulse sended");
+    delay(1000);
 
+    cs_assert(); 
+    send_command(CMD0, 0x0);
     uint8_t r1 = getByte();
     if (!(r1 & SD_R1_InIdleState)){
-        DBGF("SDCard Failed to get idle state :: Responce is: %x\n", r1);
-        DBG("SDCard: If responce is 0 - Card maybe dead or disconnected\n");
+        DBGF("SDCard Failed to get idle state :: Responce is: %x", r1);
+        DBG("SDCard: If responce is 0 - Card maybe dead or disconnected");
         return 0;
     }
-    DBG("SDCard is in Idle state\n");
+    DBG("SDCard is in Idle state");
 
     send_command(CMD8, 0x000001AA);
     r1 = getByte();
     if (r1 != SD_R1_InIdleState) {
-        DBG("SDCard failed to ack CMD8\n");
+        DBG("SDCard failed to ack CMD8");
         return 0;
     }
     uint32_t r3 = getInt();
     if (r3 != 0x000001AA) {
-        DBG("SDCard Failed to compare CMD8 value\n");
+        DBG("SDCard Failed to compare CMD8 value");
         return 0;
     }
-    DBG("SDCard CMD8 ACK, bringing it to operation state...\n");
+    DBG("SDCard CMD8 ACK, bringing it to operation state...");
 
-    uint8_t tryCount = 50;
+    uint16_t tryCount = 0x1FF;
     uint8_t sof = 0;
     do{
         send_command_ACMD(ACMD41, 0x40000000);
         r1 = getByte();
-        // if (r1 = 0xFF){
-        //     DBG("ACMD41 Seq gone wrong. Stopping all operations\n");
-        //     return 0;
-        // }
+        if (r1 == 0xFF){
+            DBG("ACMD41 Seq gone wrong. Abort...\n");
+            return 0;
+        }
         if (!(r1 & SD_R1_InIdleState)){
             sof = 1;
             break;
         }
         tryCount--;
-        delay(1000);
+        delay(5000);
     } while (tryCount);
 
     if(!sof){
-        DBG("SDCard failed to bring card to operation mode. Try increase try count or delay between readings\n");
+        DBG("SDCard failed to bring card to operation mode. Aborting\n");
         return 0;
     }
-    DBG("SDCard is operational\n");
+    DBGF("SDCard is operational, used %i cycles", 0x1FF - tryCount);
+    
 
     send_command(CMD58, 0x0);
     r1 = getByte();
 
     if (r1 != 0x0){
-        DBG("SDCard CMDM58 failed\n");
+        DBG("SDCard CMDM58 failed");
         return 0;
     }
     r3 = getInt();
     if (!(r3 & (1 << 30))){
-        DBG("SDCard CSS bit not set\n");
+        DBG("SDCard CSS bit not set");
     }
-    DBG("SDCard initialized, clear to proceed!\n");
+    DBG("SDCard initialized, clear to proceed!\n\n");
+
+    while(hSPI->SR & SPI_SR_BSY);
+    delay(50);
+    cs_deassert();
 
     return 1;
 }
@@ -117,6 +129,7 @@ uint8_t DL_SDCARD_WritePage(uint32_t addr, uint8_t *data){
     // -> SDCard goes busy -> Wait for Busy end
     uint8_t r1;
     uint8_t dataResp;
+    cs_assert();
 
     send_command(WRITE_SINGLE_BLOCK, addr);
     r1 = getByte();
@@ -156,13 +169,15 @@ uint8_t DL_SDCARD_WritePage(uint32_t addr, uint8_t *data){
         DBG("Write complete\n");
     }
 
+    cs_deassert();
+
     // We should wait while card is busy
-    for (int i = 0; i < 10; i++){
+    for (int i = 0; i < 20; i++){
         uint8_t r = spi_read_byte();
         if (r == 0xFF) {
             break;
         }
-        if (i == 9) {
+        if (i == 19) {
             DBG("Card failed to exit busy state\n");
             goto error;
         }
@@ -186,34 +201,63 @@ uint8_t DL_SDCARD_WritePage(uint32_t addr, uint8_t *data){
 uint8_t DL_SDCARD_Read(uint32_t addr, uint8_t *buffer){
     uint8_t r1;
     uint8_t dataTokenFound = 0;
-    uint8_t tryCount = 30;
+    uint8_t tryCount = 60;
+    uint8_t restart = 0;
+    start:
+
+    cs_assert();
 
     while(getByte() != 0xFF) {
-        DBG("Card is busy");
+        // DBG("Card is busy");
         if(!--tryCount) {
             DBG("Card locked in busy state");
             return 0;
         }
         delay(10000);
     }
-    tryCount = 20;
+    tryCount = 30;
 
     send_command(READ_SINGLE_BLOCK, addr);
+
+    // while(tryCount--) {
+    //     r1 = getByte();
+    //     if (r1 != 0xFF) {
+    //         break;
+    //     }
+    //     delay(100);
+    // }
+    tryCount = 30;
+
     r1 = getByte();
     if (r1) {
         DBGF("SDCard Read error: %x\n", r1);
+        if (!restart) {
+            restart = 1;
+            DL_SDCARD_Init(hSPI, csPort, csPin);
+            DBG("Rebooting");
+            goto start;
+        }
+
         return 0;
     }
     
     //Getting Data token
     do{
+        delay(200);
         r1 = getByte();
+        // DBGF("Read resp: %x", r1);
         if (r1 == 0xFE) {
             dataTokenFound = 1;
             break;
         }
     } while (tryCount--);
     if (!dataTokenFound) {
+        if (!restart) {
+            restart = 1;
+            DBG("Trying again");
+            DL_SDCARD_Init(hSPI, csPort, csPin);
+            goto start;
+        }
         DBG("SDCard failed to get data token\n");
         return 0;
     }
@@ -224,7 +268,8 @@ uint8_t DL_SDCARD_Read(uint32_t addr, uint8_t *buffer){
 
     getByte();  // This 2 bytes are CRC
     getByte();
-
+    delay(50);
+    cs_deassert();
     return 1;
 }
 
@@ -241,7 +286,7 @@ static void send_command(uint8_t command, uint32_t args){
     uint8_t *arg = (uint8_t *) &args;
     uint8_t crcdata[5] = { command, arg[3], arg[2], arg[1], arg[0]};
     uint8_t crc = crc7_gen(crcdata, 5);
-    cs_assert();
+    // cs_assert();
 
     spi_send_byte(command);
     spi_send_byte(arg[3]);
@@ -251,24 +296,29 @@ static void send_command(uint8_t command, uint32_t args){
     spi_send_byte(crc + 1);
     spi_send_byte(0xFF); //Dummy byte
     while(hSPI->SR & SPI_SR_BSY);
-    delay(50);
-    cs_deassert();
+    delay(50);   // Flag raises before all pulses are done
+    // cs_deassert();
 }
 
 static void send_command_ACMD(uint8_t acmd, uint32_t args){
+    // cs_assert();
     send_command(0x77, 0x0);
     // uint8_t r1 = getByte(); Well, actually r1 doesn't need here
     getByte();
     send_command(acmd, args);
+
+    // delay(50);
+    // cs_deassert();
 }
 
 static void set_mode_spi(){
+    cs_assert();
+    delay(10000);
     cs_deassert();
-    for (int i = 0; i < 11; i++){
+    for (int i = 0; i < 15; i++){
         spi_send_byte(0xFF);
     }
     while (hSPI->SR & SPI_SR_BSY);
-
 }
 
 static void spi_send_byte(uint8_t byte){
@@ -310,20 +360,22 @@ static void delay(uint32_t t){
 }
 
 static uint8_t getByte(){
-    cs_assert();
+    //cs_assert();
     uint8_t ret = spi_read_byte();
-    delay(50);
-    cs_deassert();
+    while(hSPI->SR & SPI_SR_BSY);
+    delay(50);  // Else it's broken 
+    // cs_deassert();
     return ret;
 }
 static uint32_t getInt(){
     uint32_t ret = 0;
-    cs_assert();
+    // cs_assert();
     for (int i = 3; i > -1; i--){
         uint8_t b = spi_read_byte();
         ret |= b << (8 * i);
     }
-    delay(50);
-    cs_deassert();
+    // delay(50);
+    // cs_deassert();
+    while(hSPI->SR & SPI_SR_BSY);
     return ret;
 }
