@@ -207,7 +207,7 @@ uint8_t DL_SDCARD_WritePage(uint32_t addr, uint8_t *data){
 
 uint8_t DL_SDCARD_Read(uint32_t addr, uint8_t *buffer){
     if (addr == cached_addr) {
-        DBG("Read from cached address");
+        // DBG("Read from cached address");
         memcpy(buffer, cached_page, 512);
     }
 
