@@ -156,9 +156,14 @@ uint8_t DL_SDCard_FileRead(SDCardInfo_t *SDCard, SDCardFile_t *file, uint8_t *bu
     
     
     while(1){
-        uint32_t clust = file->readPosition / (512 * SDCard->sectorsPerCluster);
-        uint32_t page = file->readPosition / 512  - (SDCard->sectorsPerCluster * clust);
-        uint32_t byte = file->readPosition - (512 * SDCard->sectorsPerCluster * clust + page * 512);
+        offset_t read_offset = calculateOffsets(SDCard, file->readPosition, 1);
+
+        uint32_t clust = read_offset.clust_offset;
+        uint32_t page = read_offset.page_offset;
+        uint32_t byte = read_offset.pos_offset;
+        // uint32_t clust = file->readPosition / (512 * SDCard->sectorsPerCluster);
+        // uint32_t page = file->readPosition / 512  - (SDCard->sectorsPerCluster * clust);
+        // uint32_t byte = file->readPosition - (512 * SDCard->sectorsPerCluster * clust + page * 512);
         uint32_t toRead = (bytesToRead + byte - 1) / 512 + 1;
         uint32_t clustChain = getClusterChained(SDCard, file->dataClusterStart, clust);
         DBGF("Cluster offset: %u", clust);
@@ -168,6 +173,7 @@ uint8_t DL_SDCard_FileRead(SDCardInfo_t *SDCard, SDCardFile_t *file, uint8_t *bu
         DBGF("Cluster to read: %u", clustChain);
 
         if (!clustChain) {
+            DL_delay_ticks(0xFFFFFFFF);
             DBG("ERR: Failed to get next cluster");
             DBG("ERR: Check cluster chain");
         }
@@ -415,9 +421,9 @@ static inline uint32_t readClusterValue(SDCardInfo_t *card, uint32_t clusterPos)
     offset_t offset = calculateOffsets(card, clusterPos, 4);
     uint32_t addr = card->PartitionLBA + card->reservedSectorCount + offset.page_offset + (offset.clust_offset * card->sectorsPerCluster);
     readPageCached(card, addr, buffer);
-    // DBG("Cluster page dump");
-    // DBGH(buffer, 512);
-    // DL_delay_ticks(10000000);
+    DBG("Cluster page dump");
+    DBGH(buffer, 512);
+    // DL_delay_ticks(1000);
     ret = uint32_cast(&buffer[offset.pos_offset]);
     return ret;
 }
@@ -625,9 +631,9 @@ static uint8_t readRootPage(SDCardInfo_t *SDCard, uint8_t *buffer, uint32_t page
 // 
 static uint32_t getClusterChained(SDCardInfo_t *card, uint32_t startSector, uint32_t steps){
     uint32_t temp = startSector;
-    // DBG("Cluster chained: ");
-    // DBGF("  Start Cluster: %u", temp);
-    //DBGF("  Steps: %u", steps);
+    DBG("Cluster chained: ");
+    DBGF("  Start Cluster: %u", temp);
+    DBGF("  Steps: %u", steps);
 
     if (!steps) {
         return startSector;
@@ -635,10 +641,10 @@ static uint32_t getClusterChained(SDCardInfo_t *card, uint32_t startSector, uint
 
     for(int i = 0; i < steps; i++){
         temp = readClusterValue(card, temp);
-        // DBGF(" Next cluster value: %u", temp);
+        DBGF(" Next cluster value: %u", temp);
         if (temp == 0x0FFFFFFF) return 0;
     }
-    // DBGF("  Chain: %u", temp);
+    DBGF("  Chain: %u", temp);
     return temp;     // In case steps is zero
 }
 
