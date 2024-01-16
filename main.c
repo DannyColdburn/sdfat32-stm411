@@ -8,6 +8,7 @@ SDCardInfo_t SDCard;
 SDCardFile_t *file;
 uint8_t tryCount = 10;
 uint8_t buff[512];
+uint8_t data[1024];
 
 int main(void){
     Init_Periphery();
@@ -21,50 +22,22 @@ int main(void){
 
     if (!DL_SDCARD_Mount(&SDCard)) goto skip;
 
-    file = DL_SDCARD_Open(&SDCard, "99.txt", FILE_WRITE);
+    file = DL_SDCARD_Open(&SDCard, "2.txt", FILE_WRITE);
     if (!file) goto skip;
 
     DL_SDCard_WriteString(&SDCard, file, "THIS IS NOT A DRILL, I REPEAT, THIS IS NOT A DRILL, PROGRAM WORKS WITHOUT A DEBUG, DAUUM, DA HELL IS DAT? WHO MADE DIS\r\n");
     DL_SDCard_WriteString(&SDCard, file, "GET DA HELL OUTA DIS PLACE, DIIS SO FOCKEN CURSD, SO BLOODY DIABOLICAL. TO ALL STATION, PROCEED TO EXTRACTION POINZ\r\n");
 
-    // while(!DL_SDCARD_Init(SPI1, GPIOA, 4)) {
-    //     DL_delay_ticks(10000000);
-    //     if(!tryCount --) {
-    //         goto skip;
-    //     }
-    // }
-    // tryCount = 10;
-
-
-    // while(!DL_SDCARD_Mount(&SDCard)) {
-    //     DBG("Mount failed, try again...");
-    //     DL_delay_ticks(10000000);
-    //     if(!tryCount--) {
-    //         DBG("SDCard refuses to start");
-    //         goto skip;
-    //     }
+    // for(int i = 0; i < 1024; i ++) {
+    //     uint8_t strg[256];
+    //     memset(strg, 0, 256);
+    //     sprintf(strg, "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEe, WRITING STRING %i\r\n", i);
+    //     DL_SDCard_WriteString(&SDCard, file, strg);
     // }
 
-    // file = DL_SDCARD_Open(&SDCard, "13.txt", FILE_WRITE);
-    // if (!file) goto skip;
+    DL_SDCard_FileRead(&SDCard, file, data, 1024);
 
-    // for (int i = 0; i < 256; i++) {
-    //     uint8_t data[180] = {0};
-    //     sprintf((char *) data, "Wsssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssriting %i data with %i\r\n", i, i);
-    //     if (!DL_SDCard_WriteString(&SDCard, file, data)) goto skip;
-    //     if (i % 64 == 0) {
-    //         uint8_t ss[128] = {0};
-    //         file->readPosition = file->fileSize - 128;
-    //         if (!DL_SDCard_FileRead(&SDCard, file, ss, 128)) {
-    //             DBG("Failed to read file");
-    //             DL_delay_ticks(10000000);
-    //         } else {
-    //             DBGC((char *)ss, 128);
-    //             DL_delay_ticks(10000000);
-    //         }
-    //     }
-    // }
-
+    DBGC(data, 1024);
 
     skip:
     DBG("--- Program ended ---\n");

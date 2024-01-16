@@ -13,6 +13,7 @@
 #define ENTRY_IS_ARCH 3
 #define ENTRY_ZERO 0
 #define ENTRY_NOT_FILE 2
+#define NO_ENTRY_AVAIL 0xFFFFFFFF
 
 typedef struct{
     uint8_t found;
@@ -69,6 +70,7 @@ uint8_t DL_SDCARD_Mount(SDCardInfo_t *SDCardInfo){
         return 0;
     }
     DBG("SDCard Signature matched 0x55AA");
+
     
     // 1st partition entry read and go
     SDCardInfo->PartitionLBA = uint32_cast(&sd_buffer[MBR_1PART_ENTRY + 0x8]);
@@ -283,14 +285,14 @@ static inline uint32_t getAvailableEntryPos(SDCardInfo_t *card, uint32_t entryCo
         DBGH((char *)entry, 32);
         if (!res) {     // If we got zero then maybe we approached end of cluster
             if (didExpand) {
-                DBG("Cluster expand try to execute second try. Stopping");
-                return 0;
+                DBG("Cluster expand executes second time. Stopping");
+                return NO_ENTRY_AVAIL;
             }
             offset_t offset = calculateOffsets(card, entryPos + freeFound - 1, 32); // Calculate on what offset we got entry read error, previous one should be good
             uint32_t entryCluster = getClusterChained(card, card->rootStartClusterNumber, offset.clust_offset); // Get last good cluster
             if (!expandCluster(card, entryCluster)) {
                 DBG("Failed to expand cluster");
-                return 0;
+                return NO_ENTRY_AVAIL;
             }
             didExpand = 1;
             continue;       //And then we try again 
@@ -551,10 +553,10 @@ static uint32_t createFile(SDCardInfo_t *card, SDCardFile_t *file, const char *n
     *lowClust = clusterNum & 0xFFFF;
     *highClust = (clusterNum & 0xFFFF0000) >> 16;
 
-    DBG("Will write entry:");
+    // DBG("Will write entry:");
 
     entryNum = getAvailableEntryPos(card, 1); // +1 for SFN entry    
-    if (!entryNum) {
+    if (entryNum == NO_ENTRY_AVAIL) {
         DBG("Failed to find empty place to write file entry");
         return 0;
     }
@@ -760,7 +762,7 @@ getPartitionInfo(SDCardInfo_t *cardInfo){
     cardInfo->sectorsPerFat = uint32_cast(&sd_buffer[0x24]);
     cardInfo->rootStartClusterNumber = uint32_cast(&sd_buffer[0x2C]);
     cardInfo->rootLBA = cardInfo->reservedSectorCount + (cardInfo->numberOfFatCopies * cardInfo->sectorsPerFat);
-    cardInfo->clusterSize = 512 * 64;
+    cardInfo->clusterSize = 512 * cardInfo->sectorsPerCluster;
     cardInfo->clusterMapLBA = cardInfo->PartitionLBA + cardInfo->reservedSectorCount;
     #ifdef DEBUG_D
         DBG( "SDCard Partition info:");

@@ -41,6 +41,10 @@ static void     cs_deassert();
 static uint8_t  crc7_gen(uint8_t *data, uint8_t len);
 static void     delay(uint32_t t);
 
+#define NO_CACHE 0xFFFFFFFF
+static uint32_t cached_addr = NO_CACHE;
+static uint8_t cached_page[512];
+
 
 void DL_SDCARD_TestFunc() {
 
@@ -127,6 +131,9 @@ uint8_t DL_SDCARD_WritePage(uint32_t addr, uint8_t *data){
     // How it should be
     // Sending CMD24 -> Getting R1 resp -> Send one byte -> Sending data tocken -> Send Data Packet -> Getting Data Resp. -> 
     // -> SDCard goes busy -> Wait for Busy end
+
+    cached_addr = NO_CACHE;    // To be safe, we do not want to read from cache when page been rewriten
+
     uint8_t r1;
     uint8_t dataResp;
     cs_assert();
@@ -199,6 +206,11 @@ uint8_t DL_SDCARD_WritePage(uint32_t addr, uint8_t *data){
 
 
 uint8_t DL_SDCARD_Read(uint32_t addr, uint8_t *buffer){
+    if (addr == cached_addr) {
+        DBG("Read from cached address");
+        memcpy(buffer, cached_page, 512);
+    }
+
     uint8_t r1;
     uint8_t dataTokenFound = 0;
     uint8_t tryCount = 60;
@@ -270,6 +282,8 @@ uint8_t DL_SDCARD_Read(uint32_t addr, uint8_t *buffer){
     getByte();
     delay(50);
     cs_deassert();
+    memcpy(cached_page, buffer, 512);
+    cached_addr = addr;
     return 1;
 }
 
