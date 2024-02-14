@@ -137,11 +137,17 @@ SDCardFile_t *DL_SDCARD_Open(SDCardInfo_t *SDCard, const char *fileName, uint8_t
 }
 
 uint8_t DL_SDCard_FileRead(SDCardInfo_t *SDCard, SDCardFile_t *file, uint8_t *buffer, uint32_t bytesToRead){
+    if (file->fileSize == 0) {
+        DBG("File is empty, nothing to read. Returning");
+        return 0;
+    }
+
     uint32_t lastPosition = file->readPosition + bytesToRead;
 
     if (file->readPosition >= file->fileSize){
         DBG("Read position is bigger than file size");
-        return 0;
+        DBG("Assuming reading from begining");
+        file->readPosition = 0;
     }
 
     if (file->fileSize < lastPosition) {
@@ -471,7 +477,7 @@ static uint8_t findFile (const char *fileName, SDCardFile_t *file, SDCardInfo_t 
     uint32_t pos = 0;
     uint32_t lfnCount = 0;
     uint8_t *name = 0;
-    while(readEntry(card, entry, ++pos)){ 
+    while(readEntry(card, entry, pos)){ 
 	// DBGF("Pos is: %u", pos);
 	// DBGH((char *)entry, 32);
         uint8_t res = isFile(entry);
@@ -479,7 +485,7 @@ static uint8_t findFile (const char *fileName, SDCardFile_t *file, SDCardInfo_t 
         if (res == ENTRY_IS_ARCH)   continue;
         if (res == ENTRY_NOT_FILE)   continue;
       	// DBGF("Found file at pos: %u", pos);
-	// DBGC((char *)entry, 32);
+	    // DBGC((char *)entry, 32);
         lfnCount = getEntryLFNCount(card, pos);
 		// DBGF("LFN count = %u", lfnCount);
         if (lfnCount) {
@@ -513,11 +519,12 @@ static uint8_t findFile (const char *fileName, SDCardFile_t *file, SDCardInfo_t 
         DBGF("Cheking: %s", name);
         if (strcmp((char *)name, fileName) == 0) {
             DBG("Found File");
-	    file->EntryPos = pos;
+	        file->EntryPos = pos;
             free(name);
             return 1;
         }        
         free(name);
+        pos++;
     }
     return 0;
 }

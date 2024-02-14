@@ -1,6 +1,6 @@
 #include "DL_Utils.h"
 
-void DL_GPIO_Config(GPIO_TypeDef *port, uint8_t pin, GPIOconf_t *conf){
+void DL_GPIO_Config(GPIO_TypeDef *port, uint8_t pin, DL_GPIO_Config_t *conf){
     port->MODER     &= ~(0x3 << (pin * 2));
     port->OTYPER    &= ~(0x1 << pin);
     port->OSPEEDR   &= ~(0x3 << (pin * 2));

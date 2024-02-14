@@ -9,34 +9,34 @@
 void DL_SPI_Init(SPI_TypeDef *spi, SPI_InitStruct *conf){
     RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;
     {
-        GPIOconf_t miso_conf = {
+        DL_GPIO_Config_t miso_conf = {
             .MODER = GPIO_MODER_ALT_FUN,
             .AFR = GPIO_AF5_SPI1_4,
             .OSPEEDR = GPIO_OSPEEDR_HIGH,
-            .OTYPER = GPIO_TYPER_PUSHPULL,
+            .OTYPER = GPIO_OTYPER_PUSHPULL,
             .PUPDR = GPIO_PUPDR_PULLUP,
         };
 
-        GPIOconf_t mosi_conf = {
+        DL_GPIO_Config_t mosi_conf = {
             .MODER = GPIO_MODER_ALT_FUN,
             .AFR = GPIO_AF5_SPI1_4,
             .OSPEEDR = GPIO_OSPEEDR_HIGH,
-            .OTYPER = GPIO_TYPER_PUSHPULL,
+            .OTYPER = GPIO_OTYPER_PUSHPULL,
             .PUPDR = GPIO_PUPDR_PULLDOWN
         };
 
-        GPIOconf_t sclk_conf = {
+        DL_GPIO_Config_t sclk_conf = {
             .MODER = GPIO_MODER_ALT_FUN,
             .AFR = GPIO_AF5_SPI1_4,
             .OSPEEDR = GPIO_OSPEEDR_HIGH,
-            .OTYPER = GPIO_TYPER_PUSHPULL,
+            .OTYPER = GPIO_OTYPER_PUSHPULL,
             .PUPDR = GPIO_PUPDR_PULLUP,
         };
 
-        GPIOconf_t slvs_conf = {
+        DL_GPIO_Config_t slvs_conf = {
             .MODER = GPIO_MODER_OUTPUT,
             .OSPEEDR = GPIO_OSPEEDR_HIGH,
-            .OTYPER = GPIO_TYPER_PUSHPULL,
+            .OTYPER = GPIO_OTYPER_PUSHPULL,
             .PUPDR = GPIO_PUPDR_PULLUP,
             .AFR = GPIO_AF0_SYS,
         };

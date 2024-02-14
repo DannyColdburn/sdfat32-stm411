@@ -1,87 +1,32 @@
-set(CMAKE_SYSTEM_NAME Generic)
-set(CMAKE_SYSTEM_PROCESSOR arm)
-
-set(CMAKE_C_COMPILER arm-none-eabi-gcc)
-#set(CMAKE_CXX_COMPILER arm-none-eabi-g++)
-set(CMAKE_ASM_COMPILER arm-none-eabi-as)
-set(CMAKE_OBJDUMP arm-none-eabi-objdump)
-set(CMAKE_READELF arm-none-eabi-readelf)
-set(CMAKE_OBJCOPY arm-none-eabi-objcopy)
-set(CMAKE_SIZE_UTIL arm-none-eabi-size)
-
-set(CMAKE_C_COMPILER_WORKS 1)
-set(CMAKE_CXX_COMPILER_WORKS 1)
+set(STM_DEVICE STM32F411CEU6)
+set(TRIPLET_PREFIX "arm-none-eabi")
+set(CMAKE_TOOLCHAIN_FILE /home/danny/stm32libs/toolchain/stm32_toolchain.cmake)
 
 cmake_minimum_required(VERSION 3.27)
 
 
-#set(CMAKE_C_FLAGS "-mcpu=cortex-m4 -mthumb -mfloat-abi=soft")
-#set(CMAKE_CXX_FLAGS "-mcpu=cortex-m4 -mthumb -mfloat-abi=soft")
 
 project(F411-FAT32 C ASM)
 
 #file(GLOB source_files CONFIGURE_DEPENDS *.c)
 file(GLOB_RECURSE SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/*.c)
 
+add_subdirectory(/home/danny/projects/myLibs/dlutils ${CMAKE_CURRENT_BINARY_DIR}/dlutils)
 
 add_executable(${PROJECT_NAME} dev/start.c main.c ${SOURCES})
+target_link_libraries(${PROJECT_NAME} dlutils)
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE 
     DEBUG_D
-    #DEBUG_D0
-    #DEBUG_D1
 )
 
-target_compile_options(
-    ${PROJECT_NAME} PRIVATE -mcpu=cortex-m4 -mthumb -mfloat-abi=softfp -ffunction-sections -O0 -Wall -pedantic
-)
-
-#-mfpu=fpv4-sp-d16
 
 target_include_directories(
     ${PROJECT_NAME} PRIVATE 
-    "/home/danny/stm32libs/STM32CubeF4/Drivers/CMSIS/Include" 
-    "/home/danny/stm32libs/cmsis_device_f4/Include"
     ${CMAKE_SOURCE_DIR}/inc/
 )
 
-target_link_directories(
-    ${PROJECT_NAME} PRIVATE
-    ""
-)
-
-target_link_options(
-    ${PROJECT_NAME} PRIVATE 
-    -T ${CMAKE_SOURCE_DIR}/dev/linker.ld    
-    -nostartfiles
-    -mthumb
-    -mcpu=cortex-m4
-    --specs=nano.specs
-    --specs=nosys.specs    
-    #--specs=rdimon.specs
-    -mthumb
-    -Wl,--gc-sections,--print-memory-usage
-)
-
-set_target_properties(${PROJECT_NAME} PROPERTIES SUFFIX ".elf")
-
-add_custom_command(
-    TARGET ${PROJECT_NAME}
-    POST_BUILD
-    COMMAND ${CMAKE_OBJCOPY} ARGS -O binary ${CMAKE_PROJECT_NAME}.elf ${CMAKE_PROJECT_NAME}.bin
-)
-
-add_custom_command(
-    TARGET ${PROJECT_NAME}
-    POST_BUILD
-    COMMAND ${CMAKE_SIZE_UTIL} ARGS ${CMAKE_PROJECT_NAME}.elf
-)
-
-add_custom_command(
-    TARGET ${PROJECT_NAME}
-    POST_BUILD
-    COMMAND ${CMAKE_OBJDUMP} ARGS ${CMAKE_PROJECT_NAME}.elf -x -D > ${PROJECT_NAME}.lst
-)
+generate_binary_files()
 
 #add_custom_target(GenerateBinary ALL DEPENDS ${PROJECT_NAME}.bin)
 #add_custom_target(GenerateHex ALL DEPENDS ${PROJECT_NAME}.hex)
