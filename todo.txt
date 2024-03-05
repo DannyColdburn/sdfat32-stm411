@@ -1,0 +1,4 @@
+- Should add options for file open: FILE_APPEND, FILE_TRUNCATE
+Which will decide where to place write pointer, if it needed to append file 
+e.g. write from end of file (get it from file size) or write from beginning.
+If decided to write from beginning of file - clear file size, collapse cluster chain, make sure that initial cache of file is clear 
